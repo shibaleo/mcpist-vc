@@ -12,6 +12,7 @@
 
 import { Hono } from "hono";
 import { completeCallback } from "@/lib/oauth/flow";
+import { getOAuthCallbackUrl } from "@/lib/app-url";
 
 function appendQuery(path: string, params: Record<string, string>): string {
   // path is in-app and starts with `/`. We rebuild against a dummy origin
@@ -46,14 +47,8 @@ const app = new Hono().get("/", async (c) => {
   }
 
   // Reconstruct the same callback URL we used at /start time so the token
-  // exchange's `redirect_uri` matches what the provider verified.
-  const url = new URL(c.req.url);
-  const host =
-    c.req.header("x-forwarded-host") ?? c.req.header("host") ?? url.host;
-  const proto =
-    c.req.header("x-forwarded-proto") ??
-    (url.protocol === "https:" ? "https" : "http");
-  const callbackUrl = `${proto}://${host}/api/v1/oauth/callback`;
+  // exchange's `redirect_uri` matches byte-for-byte.
+  const callbackUrl = getOAuthCallbackUrl(c.req.raw);
 
   try {
     const { module, redirect } = await completeCallback({

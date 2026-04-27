@@ -12,23 +12,12 @@ import { z } from "zod";
 import type { Env } from "@/lib/hono-app";
 import { listConfiguredProviders } from "@/lib/oauth/providers";
 import { buildAuthorizeUrl } from "@/lib/oauth/flow";
+import { getOAuthCallbackUrl } from "@/lib/app-url";
 
 const startQuery = z.object({
   module: z.string().min(1),
   redirect: z.string().optional(),
 });
-
-function callbackUrlFor(req: Request): string {
-  const url = new URL(req.url);
-  // Vercel forwards the original host in `x-forwarded-host`; in dev it's
-  // simply the request host.
-  const host =
-    req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? url.host;
-  const proto =
-    req.headers.get("x-forwarded-proto") ??
-    (url.protocol === "https:" ? "https" : "http");
-  return `${proto}://${host}/api/v1/oauth/callback`;
-}
 
 const app = new Hono<Env>()
   .get("/providers", async (c) => {
@@ -37,7 +26,7 @@ const app = new Hono<Env>()
   .get("/start", zValidator("query", startQuery), async (c) => {
     const auth = c.get("authResult");
     const { module, redirect } = c.req.valid("query");
-    const callbackUrl = callbackUrlFor(c.req.raw);
+    const callbackUrl = getOAuthCallbackUrl(c.req.raw);
     const authorize = await buildAuthorizeUrl({
       module,
       userId: auth.userId,

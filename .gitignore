@@ -35,3 +35,5 @@ vite.config.js.timestamp-*
 
 # Drizzle generated migrations (we keep raw SQL in database/migrations instead)
 drizzle/
+
+.vercel

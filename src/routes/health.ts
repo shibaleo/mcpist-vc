@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { sql } from "drizzle-orm";
 import { db } from "@/lib/db";
+import { getAppUrl } from "@/lib/app-url";
 
 const app = new Hono()
   /**
@@ -17,6 +18,7 @@ const app = new Hono()
         hasDbUrl: !!process.env.DATABASE_URL,
         hasEncKey: !!process.env.CREDENTIAL_ENCRYPTION_KEY,
         hasJwtKey: !!process.env.SERVER_JWT_SIGNING_KEY,
+        appUrl: getAppUrl(c.req.raw),
       },
       runtime: {
         node: process.version,
