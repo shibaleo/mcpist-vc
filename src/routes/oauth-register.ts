@@ -31,7 +31,12 @@ interface ClerkOAuthApp {
   client_id: string;
   /** Returned by Clerk only for confidential clients. */
   client_secret?: string;
-  callback_urls: string[];
+  /**
+   * Clerk's API uses `callback_url` (singular). The response field name
+   * has varied across API versions; we tolerate either.
+   */
+  callback_url?: string;
+  callback_urls?: string[];
   scopes: string;
   name: string;
 }
@@ -49,6 +54,10 @@ const app = new Hono().post(
     // Clerk's admin API for OAuth app creation. Public client (PKCE) so no
     // secret is generated; the client authenticates with `code_verifier`
     // alone at the token endpoint.
+    //
+    // Clerk takes `callback_url` (singular). MCP clients pass an array
+    // of redirect_uris (DCR/RFC 7591), but Clerk only stores one — we
+    // register the first and rely on it matching the authorize request.
     const res = await fetch(
       "https://api.clerk.com/v1/oauth_applications",
       {
@@ -59,7 +68,7 @@ const app = new Hono().post(
         },
         body: JSON.stringify({
           name: body.client_name ?? "MCP client",
-          callback_urls: body.redirect_uris,
+          callback_url: body.redirect_uris[0],
           scopes: body.scope ?? "openid profile email",
           public: true,
         }),
@@ -79,13 +88,16 @@ const app = new Hono().post(
     }
 
     const created = (await res.json()) as ClerkOAuthApp;
+    const registeredCallbacks =
+      created.callback_urls ??
+      (created.callback_url ? [created.callback_url] : body.redirect_uris);
 
     // RFC 7591 response shape.
     return c.json({
       client_id: created.client_id,
       // No client_secret because we requested a public client.
       client_id_issued_at: Math.floor(Date.now() / 1000),
-      redirect_uris: created.callback_urls,
+      redirect_uris: registeredCallbacks,
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
