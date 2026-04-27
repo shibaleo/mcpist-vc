@@ -1,30 +1,18 @@
 /**
  * .well-known endpoints for MCP OAuth discovery.
  *
- * mcpist defers OAuth to Clerk — Clerk is a full OAuth 2.1 + DCR + PKCE
- * authorization server, so we just publish the discovery metadata that
- * points clients (Claude.ai, Claude Desktop, ...) at Clerk for the
- * authorize/token/register dance.
+ * mcpist runs its OWN OAuth Authorization Server (proxying Clerk for
+ * end-user login under the hood). Discovery metadata advertises our
+ * authorize / token / register endpoints — clients (Claude.ai, Claude
+ * Desktop, ...) never talk to Clerk's OAuth surface directly.
  *
  * Mounted at both /api/v1/.well-known/* (canonical) and /.well-known/*
- * (root, via vercel.json rewrite) so MCP clients that look in either
- * spot find the metadata.
+ * (apex, mounted in hono-app) so MCP clients that look in either spot
+ * find the metadata.
  */
 
 import { Hono } from "hono";
 import { getAppUrl } from "@/lib/app-url";
-
-function getClerkIssuer(): string | null {
-  const pk = process.env.VITE_CLERK_PUBLISHABLE_KEY;
-  if (!pk) return null;
-  const encoded = pk.replace(/^pk_(test|live)_/, "");
-  try {
-    const domain = atob(encoded).replace(/\$$/, "");
-    return `https://${domain}`;
-  } catch {
-    return null;
-  }
-}
 
 const corsAndCacheHeaders = {
   "Cache-Control": "public, max-age=3600",
@@ -33,58 +21,48 @@ const corsAndCacheHeaders = {
 
 const app = new Hono()
   /**
-   * RFC 9728 Protected Resource Metadata. Tells the MCP client which
-   * authorization server to talk to and what bearer-token shape we accept.
+   * RFC 9728 Protected Resource Metadata. Tells the MCP client that we
+   * are also the authorization server and which bearer-token shape
+   * we accept on /api/v1/mcp.
    */
   .get("/oauth-protected-resource", (c) => {
     const appUrl = getAppUrl(c.req.raw);
-    const issuer = getClerkIssuer();
-    if (!issuer) {
-      return c.json({ error: "Clerk not configured" }, 500);
-    }
-    const metadata = {
-      resource: `${appUrl}/api/v1/mcp`,
-      authorization_servers: [issuer],
-      scopes_supported: ["openid", "profile", "email"],
-      bearer_methods_supported: ["header"],
-    };
-    return c.json(metadata, 200, corsAndCacheHeaders);
+    return c.json(
+      {
+        resource: `${appUrl}/api/v1/mcp`,
+        authorization_servers: [appUrl],
+        scopes_supported: ["openid", "profile", "email"],
+        bearer_methods_supported: ["header"],
+      },
+      200,
+      corsAndCacheHeaders,
+    );
   })
   /**
-   * RFC 8414 Authorization Server Metadata. Proxies Clerk's own metadata
-   * and INJECTS our own `registration_endpoint` — Clerk's published
-   * metadata doesn't list one, but MCP requires DCR (RFC 7591), so we
-   * front Clerk's admin OAuth-app API ourselves at /api/v1/oauth/register.
+   * RFC 8414 Authorization Server Metadata.
+   *
+   * issuer matches the URL the client fetches this from (per the spec).
+   * Endpoints all live on our domain — Clerk is invisible here. The
+   * authorize endpoint internally checks Clerk session cookies for user
+   * authentication, but that's an implementation detail.
    */
-  .get("/oauth-authorization-server", async (c) => {
-    const issuer = getClerkIssuer();
-    if (!issuer) {
-      return c.json({ error: "Clerk not configured" }, 500);
-    }
-    try {
-      const upstream = await fetch(
-        `${issuer}/.well-known/oauth-authorization-server`,
-      );
-      if (!upstream.ok) {
-        return c.json(
-          {
-            error: `clerk metadata fetch failed: ${upstream.status}`,
-          },
-          502,
-        );
-      }
-      const metadata = (await upstream.json()) as Record<string, unknown>;
-      const appUrl = getAppUrl(c.req.raw);
-      metadata.registration_endpoint = `${appUrl}/api/v1/oauth/register`;
-      return c.json(metadata, 200, corsAndCacheHeaders);
-    } catch (e) {
-      return c.json(
-        {
-          error: e instanceof Error ? e.message : "fetch failed",
-        },
-        502,
-      );
-    }
+  .get("/oauth-authorization-server", (c) => {
+    const appUrl = getAppUrl(c.req.raw);
+    return c.json(
+      {
+        issuer: appUrl,
+        authorization_endpoint: `${appUrl}/api/v1/oauth/authorize`,
+        token_endpoint: `${appUrl}/api/v1/oauth/token`,
+        registration_endpoint: `${appUrl}/api/v1/oauth/register`,
+        response_types_supported: ["code"],
+        grant_types_supported: ["authorization_code"],
+        code_challenge_methods_supported: ["S256"],
+        token_endpoint_auth_methods_supported: ["none"],
+        scopes_supported: ["openid", "profile", "email"],
+      },
+      200,
+      corsAndCacheHeaders,
+    );
   });
 
 export default app;

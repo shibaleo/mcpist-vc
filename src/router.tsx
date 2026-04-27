@@ -16,6 +16,9 @@ const McpServerPage = lazy(() => import("./app/(pages)/mcp-server/page"));
 const OAuthTestCallbackPage = lazy(
   () => import("./app/(pages)/oauth-test/callback/page"),
 );
+const OAuthConsentPage = lazy(
+  () => import("./app/(pages)/oauth/consent/page"),
+);
 const ModulesPage = lazy(() => import("./app/(pages)/modules/page"));
 const CredentialsPage = lazy(() => import("./app/(pages)/credentials/page"));
 const ApiKeysPage = lazy(() => import("./app/(pages)/api-keys/page"));
@@ -87,6 +90,22 @@ const oauthTestCallbackRoute = createRoute({
   ),
 });
 
+/**
+ * OAuth consent gateway — landing page for /api/v1/oauth/authorize when
+ * no Clerk session exists. The page wraps itself in AuthGate (Clerk
+ * login screen), then auto-redirects back to the authorize endpoint
+ * with the cookie set. No app sidebar / chrome.
+ */
+const oauthConsentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/oauth/consent",
+  component: () => (
+    <Suspense>
+      <OAuthConsentPage />
+    </Suspense>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   authLayout.addChildren([
     mcpServerRoute,
@@ -98,6 +117,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   ssoCallbackRoute,
   oauthTestCallbackRoute,
+  oauthConsentRoute,
 ]);
 
 export const router = createRouter({ routeTree });

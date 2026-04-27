@@ -19,6 +19,8 @@ import adminOAuthApps from "@/routes/admin/oauth-apps";
 import oauthCallback from "@/routes/oauth-callback";
 import wellKnown from "@/routes/well-known";
 import oauthRegister from "@/routes/oauth-register";
+import oauthAuthorize from "@/routes/oauth-authorize";
+import oauthToken from "@/routes/oauth-token";
 
 /* ── V1 API sub-app ──
  *
@@ -91,6 +93,11 @@ const v1 = new Hono<Env>()
   .route("/.well-known", wellKnown)
   // Dynamic Client Registration (RFC 7591) — public, no bearer token.
   .route("/oauth/register", oauthRegister)
+  // Authorization endpoint — checks the Clerk session cookie itself
+  // and 302-redirects to /oauth/consent if not signed in.
+  .route("/oauth/authorize", oauthAuthorize)
+  // Token endpoint — verifies PKCE + code, issues access_token.
+  .route("/oauth/token", oauthToken)
   // Auth gate
   .use("*", async (c, next) => {
     // Public paths within v1: well-known discovery + already-mounted health
@@ -103,7 +110,9 @@ const v1 = new Hono<Env>()
       path === "/api/v1/health/diag" ||
       path === "/api/v1/modules" ||
       path === "/api/v1/oauth/callback" ||
-      path === "/api/v1/oauth/register"
+      path === "/api/v1/oauth/register" ||
+      path === "/api/v1/oauth/authorize" ||
+      path === "/api/v1/oauth/token"
     ) {
       return next();
     }
@@ -160,7 +169,19 @@ const v1 = new Hono<Env>()
     });
   });
 
-const app = new Hono().basePath("/api").route("/v1", v1);
+/**
+ * Root app. Mounts:
+ *   - /api/v1/* → v1 (everything else)
+ *   - /.well-known/* → wellKnown (apex-level OAuth discovery)
+ *
+ * The apex mount is essential: Claude.ai constructs the authorization
+ * server metadata URL from the issuer (which we declare as our root
+ * domain), so it fetches `https://mcpist-vc.vercel.app/.well-known/...`.
+ * Without the apex mount that path falls through to the SPA HTML.
+ */
+const app = new Hono()
+  .route("/.well-known", wellKnown)
+  .route("/api/v1", v1);
 
 export default app;
 
