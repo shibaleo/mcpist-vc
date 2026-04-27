@@ -1,0 +1,132 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   Dark theme
+   ============================================================================= */
+
+:root {
+  /* Accent (orange) — matches data-drills-vc. */
+  --accent-value: 19 58% 56%;
+
+  --background: 240 7% 14%;
+  --card: 240 6% 17%;
+  --popover: 240 6% 17%;
+
+  --foreground: 0 0% 78%;
+  --card-foreground: 42 20% 87%;
+  --popover-foreground: 42 20% 87%;
+
+  --primary: var(--accent-value);
+  --primary-foreground: 0 0% 4%;
+
+  --secondary: 240 4% 21%;
+  --secondary-foreground: 0 0% 98%;
+  --muted: 240 4% 21%;
+  --muted-foreground: 0 0% 60%;
+  --accent: 240 4% 21%;
+  --accent-foreground: 0 0% 98%;
+
+  --border: 240 5% 26%;
+  --input: 240 5% 29%;
+  --ring: var(--accent-value);
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+
+  --sidebar: 240 5% 16%;
+  --sidebar-foreground: 0 0% 98%;
+  --sidebar-border: 240 4% 21%;
+  --sidebar-accent: 240 4% 21%;
+
+  --radius: 0.5rem;
+
+  --chart-1: 19 58% 56%;
+  --chart-2: 199 89% 48%;
+  --chart-3: 142 71% 45%;
+  --chart-4: 280 65% 60%;
+  --chart-5: 47 96% 53%;
+}
+
+@theme inline {
+  --font-sans: system-ui, sans-serif;
+  --font-mono: monospace;
+
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-sidebar: hsl(var(--sidebar));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+
+  --animate-slide-in-from-left: slide-in-from-left 0.2s ease-out;
+  --animate-slide-out-to-left: slide-out-to-left 0.2s ease-in;
+}
+
+@keyframes slide-in-from-left {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slide-out-to-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: dark;
+    scrollbar-color: hsl(var(--border)) hsl(var(--background));
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    min-height: 100dvh;
+  }
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}

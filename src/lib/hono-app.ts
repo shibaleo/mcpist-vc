@@ -1,0 +1,97 @@
+import { Hono } from "hono";
+import { logger } from "hono/logger";
+import { authenticate, type AuthResult } from "@/lib/auth";
+
+console.log("[boot] hono-app: module load");
+
+export type Env = { Variables: { authResult: AuthResult } };
+
+import health from "@/routes/health";
+import publicModules from "@/routes/modules";
+import mcp from "@/routes/mcp";
+import meCredentials from "@/routes/me/credentials";
+import meApiKeys from "@/routes/me/api-keys";
+import meModules from "@/routes/me/modules";
+import meOAuth from "@/routes/me/oauth";
+import adminOAuthApps from "@/routes/admin/oauth-apps";
+import oauthCallback from "@/routes/oauth-callback";
+
+/* ── V1 API sub-app ──
+ *
+ * Routes are chained so the accumulated route schema is preserved in the
+ * app's type — required for Hono RPC (`hc<AppType>`).
+ *
+ * Order matters:
+ *   1. cross-cutting middleware (logger, request trace, onError)
+ *   2. public routes (health, modules listing, plans)
+ *   3. auth middleware
+ *   4. protected routes (everything under /me, plus /mcp)
+ */
+
+const v1 = new Hono<Env>()
+  .use("*", logger())
+  .use("*", async (c, next) => {
+    const start = Date.now();
+    const path = c.req.path;
+    const method = c.req.method;
+    console.log(`[req] start ${method} ${path}`);
+    try {
+      await next();
+      console.log(
+        `[req] done ${method} ${path} status=${c.res.status} ms=${Date.now() - start}`,
+      );
+    } catch (e) {
+      console.error(
+        `[req] error ${method} ${path} ms=${Date.now() - start}:`,
+        e instanceof Error ? `${e.message}\n${e.stack}` : e,
+      );
+      throw e;
+    }
+  })
+  .onError((err, c) => {
+    console.error("[onError]", err);
+    const causeMsg = err.cause instanceof Error ? err.cause.message : "";
+    const msg = causeMsg
+      ? `${err.message} - ${causeMsg}`
+      : err.message || "Internal Server Error";
+    return c.json({ error: msg }, 500);
+  })
+  // Public
+  .route("/health", health)
+  .route("/modules", publicModules)
+  // OAuth callback is public — auth is carried in the signed `state` JWT
+  // emitted by /me/oauth/start, not in any session cookie or bearer token.
+  .route("/oauth/callback", oauthCallback)
+  // Auth gate
+  .use("*", async (c, next) => {
+    const result = await authenticate(c.req.raw);
+    if (!result) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    c.set("authResult", result);
+    await next();
+  })
+  // Protected
+  .route("/mcp", mcp)
+  .route("/me/credentials", meCredentials)
+  .route("/me/api-keys", meApiKeys)
+  .route("/me/modules", meModules)
+  .route("/me/oauth", meOAuth)
+  .route("/admin/oauth-apps", adminOAuthApps)
+  // `/me` is the canonical "am I logged in" probe used by AuthGate.
+  .get("/me", (c) => {
+    const a = c.get("authResult");
+    return c.json({
+      data: {
+        id: a.userId,
+        name: a.displayName ?? "",
+        email: a.email ?? "",
+      },
+    });
+  });
+
+const app = new Hono().basePath("/api").route("/v1", v1);
+
+export default app;
+
+export type AppType = typeof app;
