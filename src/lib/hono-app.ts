@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { logger } from "hono/logger";
 import { authenticate, type AuthResult } from "@/lib/auth";
+import { getAppUrl } from "@/lib/app-url";
 
 console.log("[boot] hono-app: module load");
 
@@ -15,6 +16,7 @@ import meModules from "@/routes/me/modules";
 import meOAuth from "@/routes/me/oauth";
 import adminOAuthApps from "@/routes/admin/oauth-apps";
 import oauthCallback from "@/routes/oauth-callback";
+import wellKnown from "@/routes/well-known";
 
 /* ── V1 API sub-app ──
  *
@@ -62,11 +64,23 @@ const v1 = new Hono<Env>()
   // OAuth callback is public — auth is carried in the signed `state` JWT
   // emitted by /me/oauth/start, not in any session cookie or bearer token.
   .route("/oauth/callback", oauthCallback)
+  // MCP OAuth discovery endpoints (RFC 9728 + RFC 8414).
+  .route("/.well-known", wellKnown)
   // Auth gate
   .use("*", async (c, next) => {
     const result = await authenticate(c.req.raw);
     if (!result) {
-      return c.json({ error: "Unauthorized" }, 401);
+      // RFC 9728 §5.1: include resource_metadata so MCP clients can
+      // discover the authorization server and start the OAuth flow.
+      const appUrl = getAppUrl(c.req.raw);
+      const resourceMetadata = `${appUrl}/api/v1/.well-known/oauth-protected-resource`;
+      return c.json(
+        { error: "Unauthorized" },
+        401,
+        {
+          "WWW-Authenticate": `Bearer realm="mcpist", resource_metadata="${resourceMetadata}"`,
+        },
+      );
     }
     c.set("authResult", result);
     await next();
