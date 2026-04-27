@@ -13,6 +13,9 @@ import { AuthenticateWithRedirectCallback } from "@clerk/react";
 /* ── Lazy page imports ── */
 
 const McpServerPage = lazy(() => import("./app/(pages)/mcp-server/page"));
+const OAuthTestCallbackPage = lazy(
+  () => import("./app/(pages)/oauth-test/callback/page"),
+);
 const ModulesPage = lazy(() => import("./app/(pages)/modules/page"));
 const CredentialsPage = lazy(() => import("./app/(pages)/credentials/page"));
 const ApiKeysPage = lazy(() => import("./app/(pages)/api-keys/page"));
@@ -72,6 +75,18 @@ const ssoCallbackRoute = createRoute({
   component: () => <AuthenticateWithRedirectCallback />,
 });
 
+// OAuth flow tester popup callback — outside the AuthGate so a fresh
+// Clerk login redirect lands here without an mcpist session cookie.
+const oauthTestCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/oauth-test/callback",
+  component: () => (
+    <Suspense>
+      <OAuthTestCallbackPage />
+    </Suspense>
+  ),
+});
+
 const routeTree = rootRoute.addChildren([
   authLayout.addChildren([
     mcpServerRoute,
@@ -82,6 +97,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   indexRoute,
   ssoCallbackRoute,
+  oauthTestCallbackRoute,
 ]);
 
 export const router = createRouter({ routeTree });

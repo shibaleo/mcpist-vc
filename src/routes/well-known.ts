@@ -51,12 +51,10 @@ const app = new Hono()
     return c.json(metadata, 200, corsAndCacheHeaders);
   })
   /**
-   * RFC 8414 Authorization Server Metadata. Proxies Clerk's own metadata —
-   * Claude.ai will use the endpoints (authorize_endpoint, token_endpoint,
-   * registration_endpoint) declared by Clerk.
-   *
-   * We proxy rather than redirect so CORS-restricted browser clients see
-   * the metadata served from our own origin.
+   * RFC 8414 Authorization Server Metadata. Proxies Clerk's own metadata
+   * and INJECTS our own `registration_endpoint` — Clerk's published
+   * metadata doesn't list one, but MCP requires DCR (RFC 7591), so we
+   * front Clerk's admin OAuth-app API ourselves at /api/v1/oauth/register.
    */
   .get("/oauth-authorization-server", async (c) => {
     const issuer = getClerkIssuer();
@@ -75,7 +73,9 @@ const app = new Hono()
           502,
         );
       }
-      const metadata = await upstream.json();
+      const metadata = (await upstream.json()) as Record<string, unknown>;
+      const appUrl = getAppUrl(c.req.raw);
+      metadata.registration_endpoint = `${appUrl}/api/v1/oauth/register`;
       return c.json(metadata, 200, corsAndCacheHeaders);
     } catch (e) {
       return c.json(

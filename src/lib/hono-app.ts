@@ -18,6 +18,7 @@ import meOAuth from "@/routes/me/oauth";
 import adminOAuthApps from "@/routes/admin/oauth-apps";
 import oauthCallback from "@/routes/oauth-callback";
 import wellKnown from "@/routes/well-known";
+import oauthRegister from "@/routes/oauth-register";
 
 /* ── V1 API sub-app ──
  *
@@ -88,6 +89,8 @@ const v1 = new Hono<Env>()
   .route("/oauth/callback", oauthCallback)
   // MCP OAuth discovery endpoints (RFC 9728 + RFC 8414).
   .route("/.well-known", wellKnown)
+  // Dynamic Client Registration (RFC 7591) — public, no bearer token.
+  .route("/oauth/register", oauthRegister)
   // Auth gate
   .use("*", async (c, next) => {
     // Public paths within v1: well-known discovery + already-mounted health
@@ -99,7 +102,8 @@ const v1 = new Hono<Env>()
       path === "/api/v1/health" ||
       path === "/api/v1/health/diag" ||
       path === "/api/v1/modules" ||
-      path === "/api/v1/oauth/callback"
+      path === "/api/v1/oauth/callback" ||
+      path === "/api/v1/oauth/register"
     ) {
       return next();
     }

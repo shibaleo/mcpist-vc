@@ -34,6 +34,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { OAuthTester } from "./oauth-tester";
 
 type StepStatus = "pending" | "running" | "success" | "error";
 
@@ -346,6 +347,8 @@ export default function McpServerPage() {
           )}
         </CardContent>
       </Card>
+
+      <OAuthTester mcpEndpoint={endpoint} />
     </div>
   );
 }
