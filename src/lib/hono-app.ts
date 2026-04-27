@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { logger } from "hono/logger";
+import { cors } from "hono/cors";
 import { authenticate, type AuthResult } from "@/lib/auth";
 import { getAppUrl } from "@/lib/app-url";
 
@@ -32,6 +33,27 @@ import wellKnown from "@/routes/well-known";
 
 const v1 = new Hono<Env>()
   .use("*", logger())
+  // CORS — required for browser-based MCP clients (Claude.ai, ChatGPT, ...).
+  // Must come before the auth gate so OPTIONS preflight succeeds without
+  // a bearer token. `exposeHeaders` is what lets the client's JS actually
+  // read WWW-Authenticate (browsers hide it from `fetch().headers` by
+  // default, breaking OAuth discovery).
+  .use(
+    "*",
+    cors({
+      origin: (origin) => origin ?? "*",
+      allowMethods: ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
+      allowHeaders: [
+        "Content-Type",
+        "Authorization",
+        "Mcp-Session-Id",
+        "Mcp-Protocol-Version",
+      ],
+      exposeHeaders: ["WWW-Authenticate", "Mcp-Session-Id"],
+      credentials: false,
+      maxAge: 3600,
+    }),
+  )
   .use("*", async (c, next) => {
     const start = Date.now();
     const path = c.req.path;
