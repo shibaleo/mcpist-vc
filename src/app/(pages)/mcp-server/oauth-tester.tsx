@@ -136,7 +136,18 @@ export function OAuthTester({ mcpEndpoint }: { mcpEndpoint: string }) {
       return fail(0, e instanceof Error ? e.message : String(e));
     }
     if (probeRes.status !== 401) {
-      return fail(0, `expected 401, got ${probeRes.status}`);
+      // Capture the body — when Vercel's bot mitigation 403s the request
+      // the response is HTML ("Vercel Security Checkpoint"), not our app's
+      // JSON 401. Surfacing the snippet makes that case obvious.
+      const snippet = await probeRes
+        .text()
+        .then((t) => t.slice(0, 200))
+        .catch(() => "");
+      return fail(
+        0,
+        `expected 401, got ${probeRes.status}` +
+          (snippet ? ` — body: ${snippet}` : ""),
+      );
     }
     const wwwAuth = probeRes.headers.get("WWW-Authenticate");
     if (!wwwAuth) {
