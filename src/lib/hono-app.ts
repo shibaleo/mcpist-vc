@@ -68,6 +68,19 @@ const v1 = new Hono<Env>()
   .route("/.well-known", wellKnown)
   // Auth gate
   .use("*", async (c, next) => {
+    // Public paths within v1: well-known discovery + already-mounted health
+    // / modules / oauth/callback. Hono's `.use("*")` applies to every route
+    // including those registered earlier, so we skip explicitly.
+    const path = c.req.path;
+    if (
+      path.startsWith("/api/v1/.well-known/") ||
+      path === "/api/v1/health" ||
+      path === "/api/v1/health/diag" ||
+      path === "/api/v1/modules" ||
+      path === "/api/v1/oauth/callback"
+    ) {
+      return next();
+    }
     const result = await authenticate(c.req.raw);
     if (!result) {
       // RFC 9728 §5.1: include resource_metadata so MCP clients can
