@@ -116,6 +116,10 @@ export function OAuthTester({ mcpEndpoint }: { mcpEndpoint: string }) {
     try {
       probeRes = await fetch(mcpEndpoint, {
         method: "POST",
+        // Suppress the Clerk session cookie — otherwise the auth gate
+        // would accept the existing browser session and return 200,
+        // bypassing the OAuth flow we're trying to test.
+        credentials: "omit",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           jsonrpc: "2.0",
@@ -312,6 +316,9 @@ export function OAuthTester({ mcpEndpoint }: { mcpEndpoint: string }) {
     try {
       const r = await fetch(mcpEndpoint, {
         method: "POST",
+        // Same as the probe — suppress the cookie so we know the
+        // success comes from the OAuth-issued Bearer, not the session.
+        credentials: "omit",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${tok.access_token}`,
