@@ -109,6 +109,23 @@ const v1 = new Hono<Env>()
     }
     const result = await authenticate(c.req.raw);
     if (!result) {
+      // Diagnostic — log the auth header *shape* (not full token) when an
+      // unauthenticated request comes in. Lets us tell whether the client
+      // omitted the token entirely vs. sent one our verifier rejects.
+      const authHeader =
+        c.req.header("authorization") ?? c.req.header("Authorization");
+      const cookieHeader = c.req.header("cookie");
+      console.log("[auth-gate] 401", {
+        path,
+        method: c.req.method,
+        userAgent: c.req.header("user-agent")?.slice(0, 80),
+        authHeaderPresent: !!authHeader,
+        authHeaderShape: authHeader
+          ? `${authHeader.slice(0, 12)}…(${authHeader.length} chars)`
+          : null,
+        cookiePresent: !!cookieHeader,
+        cookieShape: cookieHeader ? `${cookieHeader.length} chars` : null,
+      });
       // RFC 9728 §5.1: include resource_metadata so MCP clients can
       // discover the authorization server and start the OAuth flow.
       const appUrl = getAppUrl(c.req.raw);
