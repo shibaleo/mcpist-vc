@@ -1,0 +1,189 @@
+{
+  "tools": [
+    {
+      "id": "trello:test_connection",
+      "name": "test_connection",
+      "descriptions": {
+        "en-US": "Verify Trello credentials. Returns the authenticated user's info.",
+        "ja-JP": "Trello の認証を検証し、ユーザ情報を返します。"
+      },
+      "annotation": "readOnly",
+      "inputSchema": { "type": "object", "properties": {} }
+    },
+    {
+      "id": "trello:list_boards",
+      "name": "list_boards",
+      "descriptions": {
+        "en-US": "List the user's boards.",
+        "ja-JP": "ユーザのボード一覧を返します。"
+      },
+      "annotation": "readOnly",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "open | closed | all (default: open)"
+          }
+        }
+      }
+    },
+    {
+      "id": "trello:list_lists",
+      "name": "list_lists",
+      "descriptions": {
+        "en-US": "List the lists (columns) on a board.",
+        "ja-JP": "ボード内のリスト（列）を返します。"
+      },
+      "annotation": "readOnly",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "board_id": { "type": "string", "description": "Board ID" },
+          "filter": {
+            "type": "string",
+            "description": "open | closed | all (default: open)"
+          }
+        },
+        "required": ["board_id"]
+      }
+    },
+    {
+      "id": "trello:list_cards",
+      "name": "list_cards",
+      "descriptions": {
+        "en-US": "List cards in a list, or all cards on a board.",
+        "ja-JP": "リスト（またはボード全体）のカード一覧を返します。"
+      },
+      "annotation": "readOnly",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "list_id": { "type": "string", "description": "List ID. Use either list_id or board_id." },
+          "board_id": { "type": "string", "description": "Board ID — returns every card on the board." },
+          "filter": {
+            "type": "string",
+            "description": "open | closed | all (default: open)"
+          }
+        }
+      }
+    },
+    {
+      "id": "trello:get_card",
+      "name": "get_card",
+      "descriptions": {
+        "en-US": "Fetch a card with its members, labels, and checklists.",
+        "ja-JP": "カードの詳細（メンバー・ラベル・チェックリスト含む）を取得します。"
+      },
+      "annotation": "readOnly",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "card_id": { "type": "string", "description": "Card ID" }
+        },
+        "required": ["card_id"]
+      }
+    },
+    {
+      "id": "trello:search",
+      "name": "search",
+      "descriptions": {
+        "en-US": "Search across boards, cards, members. Trello full-text search.",
+        "ja-JP": "ボード・カード・メンバーを横断検索します。"
+      },
+      "annotation": "readOnly",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": { "type": "string", "description": "Search text" },
+          "model_types": {
+            "type": "string",
+            "description": "Comma-separated: actions,boards,cards,members,organizations (default: cards,boards)"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "id": "trello:create_card",
+      "name": "create_card",
+      "descriptions": {
+        "en-US": "Create a card in a list.",
+        "ja-JP": "リストにカードを作成します。"
+      },
+      "annotation": "create",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "list_id": { "type": "string", "description": "List ID to add the card to" },
+          "name": { "type": "string", "description": "Card title" },
+          "desc": { "type": "string", "description": "Card description (Markdown)" },
+          "due": { "type": "string", "description": "Due date (ISO 8601, optional)" },
+          "id_members": {
+            "type": "array",
+            "description": "Member IDs to assign",
+            "items": { "type": "string" }
+          },
+          "id_labels": {
+            "type": "array",
+            "description": "Label IDs to apply",
+            "items": { "type": "string" }
+          },
+          "position": {
+            "type": "string",
+            "description": "top | bottom | <number> (default: bottom)"
+          }
+        },
+        "required": ["list_id", "name"]
+      }
+    },
+    {
+      "id": "trello:update_card",
+      "name": "update_card",
+      "descriptions": {
+        "en-US": "Update a card. Use id_list to move it. Set closed=true to archive.",
+        "ja-JP": "カードを更新します。id_list でリスト移動、closed=true でアーカイブ。"
+      },
+      "annotation": "update",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "card_id": { "type": "string", "description": "Card ID" },
+          "name": { "type": "string", "description": "New title" },
+          "desc": { "type": "string", "description": "New description" },
+          "due": { "type": "string", "description": "New due date (ISO) or empty string to clear" },
+          "id_list": { "type": "string", "description": "Move card to this list" },
+          "closed": { "type": "boolean", "description": "Archive (true) / unarchive (false)" },
+          "id_members": {
+            "type": "array",
+            "description": "Replace member assignment",
+            "items": { "type": "string" }
+          },
+          "id_labels": {
+            "type": "array",
+            "description": "Replace label assignment",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["card_id"]
+      }
+    },
+    {
+      "id": "trello:add_comment",
+      "name": "add_comment",
+      "descriptions": {
+        "en-US": "Add a comment to a card.",
+        "ja-JP": "カードにコメントを追加します。"
+      },
+      "annotation": "create",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "card_id": { "type": "string", "description": "Card ID" },
+          "text": { "type": "string", "description": "Comment body (Markdown)" }
+        },
+        "required": ["card_id", "text"]
+      }
+    }
+  ]
+}

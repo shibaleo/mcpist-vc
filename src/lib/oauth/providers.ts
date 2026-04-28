@@ -143,21 +143,11 @@ export const PROVIDER_CATALOG: OAuthProvider[] = [
     rotatesRefreshToken: false,
     docsUrl: "https://developer.ticktick.com/",
   },
-  {
-    id: "trello",
-    name: "Trello",
-    description: "Boards, cards, checklists",
-    authorizeUrl: "https://trello.com/1/authorize",
-    // Trello uses OAuth 1.0a — token exchange isn't a plain POST. The OAuth
-    // flow currently bails for empty tokenUrl; full Trello support is a
-    // future task.
-    tokenUrl: "",
-    defaultScopes: "read,write",
-    tokenAuthMethod: "form",
-    tokenContentType: "urlencoded",
-    rotatesRefreshToken: false,
-    docsUrl: "https://trello.com/power-ups/admin",
-  },
+  // Trello intentionally omitted from the OAuth catalog: it only supports
+  // OAuth 1.0a (heavy) and a Member-Token / OAuth 2.0 implicit flow that
+  // delivers the token via URL fragment. Neither matches our authorization-
+  // code path. Users authenticate by pasting the API key + token JSON
+  // directly into the Credentials page.
   {
     id: "airtable",
     name: "Airtable",

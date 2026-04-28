@@ -54,7 +54,6 @@ export const providerDefaultModule: Record<string, string> = {
   asana: "asana",
   todoist: "todoist",
   ticktick: "ticktick",
-  trello: "trello",
   airtable: "airtable",
   dropbox: "dropbox",
 };

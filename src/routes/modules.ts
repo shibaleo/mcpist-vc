@@ -12,6 +12,7 @@ import { listModules } from "@/lib/mcp/modules";
 
 // Side-effect import: registers all bundled modules.
 import "@/lib/mcp/modules/postgresql";
+import "@/lib/mcp/modules/trello";
 
 const app = new Hono().get("/", (c) => {
   return c.json({
