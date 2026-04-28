@@ -179,26 +179,13 @@ async function resolveOrCreateUser(
 
 async function verifyClerkToken(token: string): Promise<AuthResult | null> {
   const jwks = getClerkJWKS();
-  if (!jwks) {
-    console.log("[auth] verifyClerk: no JWKS configured");
-    return null;
-  }
+  if (!jwks) return null;
   try {
-    const { payload, protectedHeader } = await jose.jwtVerify(token, jwks);
+    const { payload } = await jose.jwtVerify(token, jwks);
     const clerkUserId = payload.sub as string;
-    if (!clerkUserId) {
-      console.log("[auth] verifyClerk: no sub claim", { iss: payload.iss });
-      return null;
-    }
+    if (!clerkUserId) return null;
     return await resolveOrCreateUser(clerkUserId);
-  } catch (e) {
-    // Surface the verification failure reason (alg mismatch, expired, kid
-    // not in JWKS, etc.) — lets us see why a Claude.ai-issued token is
-    // being rejected without leaking the token itself.
-    console.log("[auth] verifyClerk failed:", {
-      reason: e instanceof Error ? e.message : String(e),
-      tokenShape: `${token.slice(0, 16)}…(${token.length} chars)`,
-    });
+  } catch {
     return null;
   }
 }

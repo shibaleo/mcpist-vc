@@ -23,6 +23,9 @@ const ModulesPage = lazy(() => import("./app/(pages)/modules/page"));
 const CredentialsPage = lazy(() => import("./app/(pages)/credentials/page"));
 const ApiKeysPage = lazy(() => import("./app/(pages)/api-keys/page"));
 const OAuthAppsPage = lazy(() => import("./app/(pages)/oauth-apps/page"));
+const OAuthTesterPage = lazy(
+  () => import("./app/(pages)/dev/oauth-tester/page"),
+);
 
 /* ── Route tree ── */
 
@@ -61,6 +64,8 @@ const modulesRoute = lazyRoute("/modules", ModulesPage);
 const credentialsRoute = lazyRoute("/credentials", CredentialsPage);
 const apiKeysRoute = lazyRoute("/api-keys", ApiKeysPage);
 const oauthAppsRoute = lazyRoute("/oauth-apps", OAuthAppsPage);
+// Dev-only — not in the sidebar; reachable from the MCP Server page link.
+const oauthTesterRoute = lazyRoute("/dev/oauth-tester", OAuthTesterPage);
 
 // / → /mcp-server
 const indexRoute = createRoute({
@@ -113,6 +118,7 @@ const routeTree = rootRoute.addChildren([
     credentialsRoute,
     apiKeysRoute,
     oauthAppsRoute,
+    oauthTesterRoute,
   ]),
   indexRoute,
   ssoCallbackRoute,
