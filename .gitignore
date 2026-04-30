@@ -32,8 +32,3 @@ vite.config.js.timestamp-*
 
 # pnpm store
 .pnpm-store/
-
-# Drizzle generated migrations (we keep raw SQL in database/migrations instead)
-drizzle/
-
-.vercel
