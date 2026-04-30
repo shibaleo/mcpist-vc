@@ -19,6 +19,9 @@ const OAuthConsentPage = lazy(
 const OAuthTesterPage = lazy(
   () => import("./app/(pages)/dev/oauth-tester/page"),
 );
+const OAuthTestCallbackPage = lazy(
+  () => import("./app/(pages)/oauth-test/callback/page"),
+);
 
 /* ── Route tree ── */
 
@@ -71,6 +74,18 @@ const ssoCallbackRoute = createRoute({
   component: () => <AuthenticateWithRedirectCallback />,
 });
 
+// OAuth flow tester popup callback — outside the AuthGate so the redirect
+// from /api/v1/oauth/authorize lands without an mcpist session cookie.
+const oauthTestCallbackRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/oauth-test/callback",
+  component: () => (
+    <Suspense>
+      <OAuthTestCallbackPage />
+    </Suspense>
+  ),
+});
+
 /**
  * OAuth consent gateway — landing page for /api/v1/oauth/authorize when
  * no Clerk session exists. The page wraps itself in AuthGate (Clerk
@@ -91,6 +106,7 @@ const routeTree = rootRoute.addChildren([
   authLayout.addChildren([mcpServerRoute, oauthTesterRoute]),
   indexRoute,
   ssoCallbackRoute,
+  oauthTestCallbackRoute,
   oauthConsentRoute,
 ]);
 
