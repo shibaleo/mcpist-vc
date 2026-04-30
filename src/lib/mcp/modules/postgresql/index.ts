@@ -2,9 +2,8 @@
  * PostgreSQL module — registers tools with the MCP module registry.
  *
  * Tool definitions live in `schemas.json` so they can be exported once and
- * reused by the Console UI without duplicating the descriptions. The
- * runtime `description` is selected from the localized map based on the
- * default UI locale (en-US for now; the legacy Go server's behaviour).
+ * reused by the Console UI without duplicating the descriptions. All
+ * user-facing strings are English.
  */
 
 import {
@@ -26,13 +25,6 @@ const ANNOTATION_MAP: Record<string, ToolAnnotations> = {
   destructive: ANNOTATE_DESTRUCTIVE,
 };
 
-const MODULE_DESCRIPTIONS = {
-  "en-US":
-    "PostgreSQL Database - Direct connection for query execution and schema inspection",
-  "ja-JP":
-    "PostgreSQL データベース - クエリ実行とスキーマ確認のための直接接続",
-};
-
 const HANDLER_MAP: Record<
   string,
   (ctx: ModuleContext, params: Record<string, unknown>) => Promise<string>
@@ -49,7 +41,7 @@ const HANDLER_MAP: Record<
 interface ToolSchemaEntry {
   id: string;
   name: string;
-  descriptions: Record<string, string>;
+  description: string;
   annotation: keyof typeof ANNOTATION_MAP;
   inputSchema: Tool["inputSchema"];
 }
@@ -57,18 +49,26 @@ interface ToolSchemaEntry {
 const tools: Tool[] = (schemas.tools as unknown as ToolSchemaEntry[]).map((t) => ({
   id: t.id,
   name: t.name,
-  description: t.descriptions["en-US"],
-  descriptions: t.descriptions,
+  description: t.description,
   inputSchema: t.inputSchema,
   annotations: ANNOTATION_MAP[t.annotation],
 }));
 
 const postgresqlModule: Module = {
   name: "postgresql",
-  description: MODULE_DESCRIPTIONS["en-US"],
-  descriptions: MODULE_DESCRIPTIONS,
+  description:
+    "PostgreSQL Database — direct connection for query execution and schema inspection.",
   apiVersion: "v1",
   tools,
+  credentialFields: [
+    {
+      name: "accessToken",
+      label: "Connection string",
+      type: "textarea",
+      placeholder: "postgresql://user:pass@host:5432/db",
+      help: "Standard libpq URL. SSL is appended automatically. localhost / 127.0.0.1 are blocked for SSRF safety.",
+    },
+  ],
   async executeTool(ctx, toolName, params) {
     const fn = HANDLER_MAP[toolName];
     if (!fn) throw new Error(`unknown tool: ${toolName}`);

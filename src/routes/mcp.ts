@@ -19,7 +19,6 @@ import {
 
 // Self-registering module imports — add new modules here as they're ported.
 import "@/lib/mcp/modules/postgresql";
-import "@/lib/mcp/modules/trello";
 
 const app = new Hono<Env>().post("/", async (c) => {
   const auth = c.get("authResult");

@@ -20,7 +20,6 @@ import { getModule, listModules } from "@/lib/mcp/modules";
 
 // Side-effect: ensure module registry is populated before /config is queried.
 import "@/lib/mcp/modules/postgresql";
-import "@/lib/mcp/modules/trello";
 
 const upsertToolsBody = z.object({
   enabled_tools: z.array(z.string()),

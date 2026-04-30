@@ -12,7 +12,6 @@ import { listModules } from "@/lib/mcp/modules";
 
 // Side-effect import: registers all bundled modules.
 import "@/lib/mcp/modules/postgresql";
-import "@/lib/mcp/modules/trello";
 
 const app = new Hono().get("/", (c) => {
   return c.json({
@@ -20,16 +19,15 @@ const app = new Hono().get("/", (c) => {
       name: mod.name,
       status: "active" as const,
       description: mod.description,
-      descriptions: mod.descriptions ?? null,
       api_version: mod.apiVersion,
       tools: mod.tools.map((t) => ({
         id: t.id,
         name: t.name,
         description: t.description,
-        descriptions: t.descriptions ?? null,
         inputSchema: t.inputSchema,
         annotations: t.annotations ?? null,
       })),
+      credential_fields: mod.credentialFields ?? null,
     })),
   });
 });

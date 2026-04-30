@@ -7,6 +7,11 @@
  * laid out in a 2/3-column grid, split into "Add" (not yet connected)
  * and "Connected" sections. Tiles are clickable; the dialog handles
  * connect / reconnect / disconnect.
+ *
+ * The manual-entry form is driven by each module's `credential_fields`
+ * declaration (surfaced via /api/v1/modules). Field names map directly
+ * into the broker's Credentials envelope, so what the user types lands
+ * exactly where the module handler later reads it.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -27,7 +32,7 @@ import {
   useDeleteCredential,
   credentialsKeys,
 } from "@/hooks/queries/use-credentials";
-import { useModulesList } from "@/hooks/queries/use-modules";
+import { useModulesList, type ModuleListing } from "@/hooks/queries/use-modules";
 import {
   useOAuthProviders,
   useOAuthStart,
@@ -42,10 +47,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+
+type CredentialField = NonNullable<ModuleListing["credential_fields"]>[number];
 
 export default function CredentialsPage() {
   usePageTitle("Credentials");
@@ -58,7 +66,7 @@ export default function CredentialsPage() {
   const qc = useQueryClient();
 
   const [openModule, setOpenModule] = useState<string | null>(null);
-  const [credBody, setCredBody] = useState("");
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
 
   /**
    * The OAuth callback redirects back here with `?oauth=connected|error`.
@@ -104,9 +112,24 @@ export default function CredentialsPage() {
   const connected = modules.filter((m) => credByModule.has(m.name));
   const notConnected = modules.filter((m) => !credByModule.has(m.name));
 
+  const moduleByName = useMemo(() => {
+    const m = new Map<string, ModuleListing>();
+    for (const mod of modules) m.set(mod.name, mod);
+    return m;
+  }, [modules]);
+
+  const openMod = openModule ? (moduleByName.get(openModule) ?? null) : null;
+  const dialogFields: CredentialField[] = openMod?.credential_fields ?? [];
+  const dialogIsConnected = openModule
+    ? credByModule.has(openModule)
+    : false;
+  const dialogProviderName = openModule
+    ? (oauthByModule.get(openModule)?.providerName ?? null)
+    : null;
+
   const openDialog = (moduleName: string) => {
     setOpenModule(moduleName);
-    setCredBody("");
+    setFieldValues({});
   };
 
   const handleConnectOAuth = async (moduleName: string) => {
@@ -122,18 +145,38 @@ export default function CredentialsPage() {
 
   const handleSaveManual = async () => {
     if (!openModule) return;
-    let parsed: unknown = credBody;
-    const trimmed = credBody.trim();
-    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
-      try {
-        parsed = JSON.parse(trimmed);
-      } catch {
-        toast.error("Invalid JSON");
+
+    let credentials: unknown;
+    if (dialogFields.length > 0) {
+      // Build a structured Credentials object from the form values. Empty
+      // strings are dropped so optional-field defaults stay clean.
+      const obj: Record<string, string> = {};
+      for (const f of dialogFields) {
+        const v = (fieldValues[f.name] ?? "").trim();
+        if (v) obj[f.name] = v;
+      }
+      // Required-field check: treat every declared field as required for
+      // now. Optional fields would need a flag in the schema.
+      const missing = dialogFields
+        .filter((f) => !obj[f.name])
+        .map((f) => f.label);
+      if (missing.length > 0) {
+        toast.error(`Required: ${missing.join(", ")}`);
         return;
       }
+      credentials = obj;
+    } else {
+      // No declared schema → fall back to a single freeform string.
+      const v = (fieldValues.__raw ?? "").trim();
+      if (!v) {
+        toast.error("Credential is required");
+        return;
+      }
+      credentials = v;
     }
+
     try {
-      await upsert.mutateAsync({ module: openModule, credentials: parsed });
+      await upsert.mutateAsync({ module: openModule, credentials });
       toast.success("Saved");
       setOpenModule(null);
     } catch (e) {
@@ -161,13 +204,6 @@ export default function CredentialsPage() {
     );
   }
 
-  const dialogIsConnected = openModule
-    ? credByModule.has(openModule)
-    : false;
-  const dialogProviderName = openModule
-    ? (oauthByModule.get(openModule)?.providerName ?? null)
-    : null;
-
   return (
     <div className="p-4 md:p-6 space-y-6">
       <div>
@@ -178,7 +214,6 @@ export default function CredentialsPage() {
         </p>
       </div>
 
-      {/* Add — not yet connected */}
       {notConnected.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -198,7 +233,6 @@ export default function CredentialsPage() {
         </section>
       )}
 
-      {/* Connected */}
       {connected.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -219,7 +253,6 @@ export default function CredentialsPage() {
         </section>
       )}
 
-      {/* Connect / disconnect dialog */}
       <Dialog
         open={!!openModule}
         onOpenChange={(o) => !o && setOpenModule(null)}
@@ -236,10 +269,10 @@ export default function CredentialsPage() {
             </DialogTitle>
             <DialogDescription>
               {dialogIsConnected
-                ? "Reconnect, replace the stored credential, or disconnect."
+                ? "Reconnect, replace stored values, or disconnect."
                 : dialogProviderName
-                  ? "Connect via OAuth or paste credentials manually."
-                  : "Paste the connection string / API key / token JSON."}
+                  ? "Connect via OAuth, or enter the credentials manually."
+                  : "Enter the credentials this module needs to talk to its provider."}
             </DialogDescription>
           </DialogHeader>
 
@@ -257,35 +290,35 @@ export default function CredentialsPage() {
               </Button>
             )}
 
-            <div className="space-y-1.5">
-              <Label>
-                {dialogIsConnected
-                  ? "Replace credential"
-                  : "Credential (manual)"}
-              </Label>
-              <Textarea
-                rows={5}
-                value={credBody}
-                onChange={(e) => setCredBody(e.target.value)}
-                placeholder="postgresql://user:pass@host:5432/db"
-                className="font-mono text-xs"
-              />
-              <p className="text-xs text-muted-foreground">
-                Raw string for connection strings / API keys, or JSON envelope
-                for OAuth tokens.
-              </p>
-            </div>
-
-            {openModule === "postgresql" && (
-              <a
-                href="https://neon.tech/docs/connect/connect-from-any-app"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-              >
-                Where do I find this?
-                <ExternalLink className="size-3" />
-              </a>
+            {/* Schema-driven manual fields */}
+            {dialogFields.length > 0 ? (
+              dialogFields.map((f) => (
+                <CredentialFieldInput
+                  key={f.name}
+                  field={f}
+                  value={fieldValues[f.name] ?? ""}
+                  onChange={(v) =>
+                    setFieldValues((prev) => ({ ...prev, [f.name]: v }))
+                  }
+                />
+              ))
+            ) : (
+              // Module declared no schema — single freeform field. Rare;
+              // most production modules should declare credential_fields.
+              <div className="space-y-1.5">
+                <Label>Credential</Label>
+                <Textarea
+                  rows={4}
+                  value={fieldValues.__raw ?? ""}
+                  onChange={(e) =>
+                    setFieldValues((prev) => ({
+                      ...prev,
+                      __raw: e.target.value,
+                    }))
+                  }
+                  className="font-mono text-xs"
+                />
+              </div>
             )}
           </div>
 
@@ -312,10 +345,7 @@ export default function CredentialsPage() {
               <Button variant="ghost" onClick={() => setOpenModule(null)}>
                 Cancel
               </Button>
-              <Button
-                onClick={handleSaveManual}
-                disabled={upsert.isPending || !credBody.trim()}
-              >
+              <Button onClick={handleSaveManual} disabled={upsert.isPending}>
                 {upsert.isPending ? "Saving…" : "Save"}
               </Button>
             </div>
@@ -336,7 +366,7 @@ interface TileProps {
 /**
  * Service tile: 10x10 monogram avatar (initials) + name + truncated
  * description. Connected tiles get a primary-colored ring + a small dot
- * at the bottom-right of the avatar (matching the legacy "online dot").
+ * at the bottom-right of the avatar.
  */
 function Tile({ name, description, connected, onClick }: TileProps) {
   return (
@@ -359,6 +389,58 @@ function Tile({ name, description, connected, onClick }: TileProps) {
           {description}
         </div>
       </div>
+    </div>
+  );
+}
+
+function CredentialFieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: CredentialField;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{field.label}</Label>
+      {field.type === "textarea" ? (
+        <Textarea
+          rows={4}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.placeholder ?? ""}
+          className="font-mono text-xs"
+        />
+      ) : (
+        <Input
+          type={field.type === "password" ? "password" : "text"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.placeholder ?? ""}
+          className="font-mono text-xs"
+        />
+      )}
+      {(field.help || field.helpUrl) && (
+        <p className="text-[11px] text-muted-foreground">
+          {field.help}
+          {field.helpUrl && (
+            <>
+              {field.help ? " " : ""}
+              <a
+                href={field.helpUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 text-primary hover:underline"
+              >
+                Open
+                <ExternalLink className="size-3" />
+              </a>
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

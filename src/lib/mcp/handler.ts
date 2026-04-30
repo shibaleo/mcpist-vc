@@ -88,9 +88,12 @@ async function handleToolsList(
     for (const tool of mod.tools) {
       if (hasAnySetting && !enabledIds.has(tool.id)) continue;
       tools.push({
-        // Wire-level `name` is the qualified tool ID — multiple modules can
-        // expose tools with the same short name without collision.
-        name: tool.id,
+        // Wire-level `name` must match Claude.ai's regex
+        // ^[a-zA-Z0-9_-]{1,64}$ — colons aren't allowed, so we use
+        // `<module>_<short>` instead of the internal `<module>:<short>`
+        // tool ID. tools/call splits this back via the registered
+        // module-name prefix (see resolveTool).
+        name: wireToolName(mod.name, tool.name),
         description: tool.description,
         inputSchema: tool.inputSchema,
         annotations: tool.annotations,
@@ -99,6 +102,32 @@ async function handleToolsList(
   }
 
   return ok(id, { tools });
+}
+
+function wireToolName(moduleName: string, toolName: string): string {
+  return `${moduleName}_${toolName}`;
+}
+
+/**
+ * Wire name → (module, tool) split.
+ *
+ * Modules can themselves contain underscores ("google_drive"), so we can't
+ * just split on the first `_`. Try the registered module names as prefixes
+ * — first match wins.
+ */
+function resolveWireName(
+  wireName: string,
+): { moduleName: string; toolName: string } | null {
+  for (const mod of listModules()) {
+    const prefix = `${mod.name}_`;
+    if (wireName.startsWith(prefix)) {
+      return {
+        moduleName: mod.name,
+        toolName: wireName.slice(prefix.length),
+      };
+    }
+  }
+  return null;
 }
 
 async function handleToolsCall(
@@ -115,12 +144,11 @@ async function handleToolsCall(
       ? (params.arguments as Record<string, unknown>)
       : {};
 
-  const colon = name.indexOf(":");
-  if (colon < 0) {
+  const resolved = resolveWireName(name);
+  if (!resolved) {
     return err(id, RPC_INVALID_PARAMS, `invalid tool name: ${name}`);
   }
-  const moduleName = name.slice(0, colon);
-  const toolName = name.slice(colon + 1);
+  const { moduleName, toolName } = resolved;
 
   const mod = getModule(moduleName);
   if (!mod) {

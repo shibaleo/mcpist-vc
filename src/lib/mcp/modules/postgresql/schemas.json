@@ -3,10 +3,7 @@
     {
       "id": "postgresql:test_connection",
       "name": "test_connection",
-      "descriptions": {
-        "en-US": "Test PostgreSQL connection and return server version and connection info.",
-        "ja-JP": "PostgreSQL 接続をテストし、サーバーバージョンと接続情報を返します。"
-      },
+      "description": "Test PostgreSQL connection and return server version and connection info.",
       "annotation": "readOnly",
       "inputSchema": {
         "type": "object",
@@ -16,10 +13,7 @@
     {
       "id": "postgresql:list_schemas",
       "name": "list_schemas",
-      "descriptions": {
-        "en-US": "List all schemas in the database.",
-        "ja-JP": "データベース内のすべてのスキーマを一覧表示します。"
-      },
+      "description": "List all schemas in the database.",
       "annotation": "readOnly",
       "inputSchema": {
         "type": "object",
@@ -34,10 +28,7 @@
     {
       "id": "postgresql:list_tables",
       "name": "list_tables",
-      "descriptions": {
-        "en-US": "List all tables in a schema with row count estimates.",
-        "ja-JP": "スキーマ内のすべてのテーブルを推定行数とともに一覧表示します。"
-      },
+      "description": "List all tables in a schema with row count estimates.",
       "annotation": "readOnly",
       "inputSchema": {
         "type": "object",
@@ -56,10 +47,7 @@
     {
       "id": "postgresql:describe_table",
       "name": "describe_table",
-      "descriptions": {
-        "en-US": "Get table structure including columns, types, constraints, and indexes.",
-        "ja-JP": "カラム、型、制約、インデックスを含むテーブル構造を取得します。"
-      },
+      "description": "Get table structure including columns, types, constraints, and indexes.",
       "annotation": "readOnly",
       "inputSchema": {
         "type": "object",
@@ -76,10 +64,7 @@
     {
       "id": "postgresql:query",
       "name": "query",
-      "descriptions": {
-        "en-US": "Execute a SELECT query. Supports parameterized queries with $1, $2, etc.",
-        "ja-JP": "SELECT クエリを実行します。$1, $2 などのパラメータ化クエリをサポートします。"
-      },
+      "description": "Execute a SELECT query. Supports parameterized queries with $1, $2, etc.",
       "annotation": "readOnly",
       "inputSchema": {
         "type": "object",
@@ -101,10 +86,7 @@
     {
       "id": "postgresql:execute",
       "name": "execute",
-      "descriptions": {
-        "en-US": "Execute INSERT/UPDATE/DELETE statement. Returns affected row count.",
-        "ja-JP": "INSERT/UPDATE/DELETE 文を実行します。影響を受けた行数を返します。"
-      },
+      "description": "Execute INSERT/UPDATE/DELETE statement. Returns affected row count.",
       "annotation": "create",
       "inputSchema": {
         "type": "object",
@@ -125,10 +107,7 @@
     {
       "id": "postgresql:execute_ddl",
       "name": "execute_ddl",
-      "descriptions": {
-        "en-US": "Execute DDL statement (CREATE/ALTER/DROP/TRUNCATE). Use with caution.",
-        "ja-JP": "DDL 文（CREATE/ALTER/DROP/TRUNCATE）を実行します。注意して使用してください。"
-      },
+      "description": "Execute DDL statement (CREATE/ALTER/DROP/TRUNCATE). Use with caution.",
       "annotation": "destructive",
       "inputSchema": {
         "type": "object",

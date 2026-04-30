@@ -4,13 +4,10 @@
  * Aligned 1:1 with the legacy Go server's `internal/modules/types.go`.
  * The on-the-wire shape (JSON-RPC, tool definition, content blocks) MUST
  * match because existing MCP clients are configured against the old wire
- * format. New tool definitions also flow into `mcpist.modules.tools` JSONB
- * for the Console UI, so any drift would break the modules page.
+ * format.
+ *
+ * All user-facing strings (tool descriptions, help text) are in English.
  */
-
-// ── Localized strings (en-US / ja-JP) ─────────────────────────────────────
-
-export type LocalizedText = Record<string, string>;
 
 // ── Tool definition ───────────────────────────────────────────────────────
 
@@ -64,14 +61,11 @@ export interface InputSchema {
 }
 
 export interface Tool {
-  /** Stable ID e.g. "postgresql:query" */
+  /** Stable ID — `<module>:<name>`, used as the registry key. */
   id: string;
-  /** Display / execution name within the module */
+  /** Short name within the module (e.g. "query", "list_tables"). */
   name: string;
-  /** Runtime-selected description (after language pick) */
   description: string;
-  /** Multilingual descriptions retained for export/sync */
-  descriptions?: LocalizedText;
   inputSchema: InputSchema;
   annotations?: ToolAnnotations;
 }
@@ -95,12 +89,34 @@ export interface ModuleContext {
   userId: string;
 }
 
+/**
+ * Per-field schema for the manual credential-entry form. Keys (`name`)
+ * map directly into the `Credentials` envelope the broker stores —
+ * `apiKey`, `accessToken`, `token`, etc. — so values land in the same
+ * places module handlers already read from.
+ *
+ * Declare this on a module if it needs structured manual entry; modules
+ * that ship only via OAuth (or that need just a single freeform string)
+ * can omit it and the UI falls back to a textarea.
+ */
+export interface CredentialField {
+  name: string;
+  label: string;
+  type: "text" | "password" | "textarea";
+  placeholder?: string;
+  /** Help text shown beneath the input. */
+  help?: string;
+  /** Optional link (e.g., the provider's "where do I get this" docs). */
+  helpUrl?: string;
+}
+
 export interface Module {
   name: string;
   description: string;
-  descriptions?: LocalizedText;
   apiVersion: string;
   tools: Tool[];
+  /** Per-module manual-entry credential schema. Optional. */
+  credentialFields?: CredentialField[];
   executeTool(
     ctx: ModuleContext,
     toolName: string,
