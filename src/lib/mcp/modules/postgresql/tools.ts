@@ -44,17 +44,38 @@ const writePatterns: RegExp[] = [
   /^\s*DELETE\s+/i,
 ];
 
+/**
+ * Strip leading whitespace + SQL comments so the keyword check below
+ * sees the real first statement. Without this, perfectly valid SELECTs
+ * with a leading `-- comment` were rejected as non-SELECT.
+ *
+ * Stripping is intentionally LEADING-ONLY — we never touch comments or
+ * `--` sequences mid-statement (those can sit inside string literals
+ * and parsing them properly would mean implementing an SQL lexer).
+ *
+ * Security: comment-injection like `-- SELECT\nDROP TABLE t` becomes
+ * `DROP TABLE t` after stripping, so the DDL pattern still catches it.
+ * The keyword guards run AFTER stripping, never on the raw input.
+ */
+const LEADING_NOISE_RE = /^(?:\s+|--[^\n]*\n?|\/\*[\s\S]*?\*\/)+/;
+
+function stripLeadingNoise(sql: string): string {
+  return sql.replace(LEADING_NOISE_RE, "");
+}
+
 function isDDL(sql: string): boolean {
-  return dangerousPatterns.some((re) => re.test(sql));
+  const stripped = stripLeadingNoise(sql);
+  return dangerousPatterns.some((re) => re.test(stripped));
 }
 
 function isWriteOperation(sql: string): boolean {
-  return writePatterns.some((re) => re.test(sql));
+  const stripped = stripLeadingNoise(sql);
+  return writePatterns.some((re) => re.test(stripped));
 }
 
 function isSelectOnly(sql: string): boolean {
-  const trimmed = sql.trimStart().toUpperCase();
-  return trimmed.startsWith("SELECT") || trimmed.startsWith("WITH");
+  const head = stripLeadingNoise(sql).toUpperCase();
+  return head.startsWith("SELECT") || head.startsWith("WITH");
 }
 
 // ── Connection management ─────────────────────────────────────────────────
