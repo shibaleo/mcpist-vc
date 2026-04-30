@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { logger } from "hono/logger";
 import { cors } from "hono/cors";
-import { authenticate, type AuthResult } from "@/lib/auth";
+import { authenticate, OWNER_EMAIL, type AuthResult } from "@/lib/auth";
 import { getAppUrl } from "@/lib/app-url";
 
 console.log("[boot] hono-app: module load");
@@ -9,14 +9,7 @@ console.log("[boot] hono-app: module load");
 export type Env = { Variables: { authResult: AuthResult } };
 
 import health from "@/routes/health";
-import publicModules from "@/routes/modules";
 import mcp from "@/routes/mcp";
-import meCredentials from "@/routes/me/credentials";
-import meApiKeys from "@/routes/me/api-keys";
-import meModules from "@/routes/me/modules";
-import meOAuth from "@/routes/me/oauth";
-import adminOAuthApps from "@/routes/admin/oauth-apps";
-import oauthCallback from "@/routes/oauth-callback";
 import wellKnown from "@/routes/well-known";
 import oauthRegister from "@/routes/oauth-register";
 import oauthAuthorize from "@/routes/oauth-authorize";
@@ -24,14 +17,11 @@ import oauthToken from "@/routes/oauth-token";
 
 /* ── V1 API sub-app ──
  *
- * Routes are chained so the accumulated route schema is preserved in the
- * app's type — required for Hono RPC (`hc<AppType>`).
- *
  * Order matters:
  *   1. cross-cutting middleware (logger, request trace, onError)
- *   2. public routes (health, modules listing, plans)
+ *   2. public routes (health, OAuth discovery + endpoints)
  *   3. auth middleware
- *   4. protected routes (everything under /me, plus /mcp)
+ *   4. protected routes (/mcp, /me)
  */
 
 const v1 = new Hono<Env>()
@@ -85,10 +75,6 @@ const v1 = new Hono<Env>()
   })
   // Public
   .route("/health", health)
-  .route("/modules", publicModules)
-  // OAuth callback is public — auth is carried in the signed `state` JWT
-  // emitted by /me/oauth/start, not in any session cookie or bearer token.
-  .route("/oauth/callback", oauthCallback)
   // MCP OAuth discovery endpoints (RFC 9728 + RFC 8414).
   .route("/.well-known", wellKnown)
   // Dynamic Client Registration (RFC 7591) — public, no bearer token.
@@ -100,16 +86,10 @@ const v1 = new Hono<Env>()
   .route("/oauth/token", oauthToken)
   // Auth gate
   .use("*", async (c, next) => {
-    // Public paths within v1: well-known discovery + already-mounted health
-    // / modules / oauth/callback. Hono's `.use("*")` applies to every route
-    // including those registered earlier, so we skip explicitly.
     const path = c.req.path;
     if (
       path.startsWith("/api/v1/.well-known/") ||
       path === "/api/v1/health" ||
-      path === "/api/v1/health/diag" ||
-      path === "/api/v1/modules" ||
-      path === "/api/v1/oauth/callback" ||
       path === "/api/v1/oauth/register" ||
       path === "/api/v1/oauth/authorize" ||
       path === "/api/v1/oauth/token"
@@ -135,22 +115,17 @@ const v1 = new Hono<Env>()
   })
   // Protected
   .route("/mcp", mcp)
-  .route("/me/credentials", meCredentials)
-  .route("/me/api-keys", meApiKeys)
-  .route("/me/modules", meModules)
-  .route("/me/oauth", meOAuth)
-  .route("/admin/oauth-apps", adminOAuthApps)
   // `/me` is the canonical "am I logged in" probe used by AuthGate.
-  .get("/me", (c) => {
-    const a = c.get("authResult");
-    return c.json({
+  // In single-owner mode the only valid identity is the owner.
+  .get("/me", (c) =>
+    c.json({
       data: {
-        id: a.userId,
-        name: a.displayName ?? "",
-        email: a.email ?? "",
+        id: "owner",
+        name: OWNER_EMAIL,
+        email: OWNER_EMAIL,
       },
-    });
-  });
+    }),
+  );
 
 /**
  * Root app. Mounts:

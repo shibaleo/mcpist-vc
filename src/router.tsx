@@ -13,16 +13,9 @@ import { AuthenticateWithRedirectCallback } from "@clerk/react";
 /* ── Lazy page imports ── */
 
 const McpServerPage = lazy(() => import("./app/(pages)/mcp-server/page"));
-const OAuthTestCallbackPage = lazy(
-  () => import("./app/(pages)/oauth-test/callback/page"),
-);
 const OAuthConsentPage = lazy(
   () => import("./app/(pages)/oauth/consent/page"),
 );
-const ModulesPage = lazy(() => import("./app/(pages)/modules/page"));
-const CredentialsPage = lazy(() => import("./app/(pages)/credentials/page"));
-const ApiKeysPage = lazy(() => import("./app/(pages)/api-keys/page"));
-const OAuthAppsPage = lazy(() => import("./app/(pages)/oauth-apps/page"));
 const OAuthTesterPage = lazy(
   () => import("./app/(pages)/dev/oauth-tester/page"),
 );
@@ -33,7 +26,6 @@ const rootRoute = createRootRoute({
   component: () => <Outlet />,
 });
 
-// Authenticated layout (AuthGate + AppLayout)
 const authLayout = createRoute({
   getParentRoute: () => rootRoute,
   id: "authenticated",
@@ -60,10 +52,6 @@ function lazyRoute(
 }
 
 const mcpServerRoute = lazyRoute("/mcp-server", McpServerPage);
-const modulesRoute = lazyRoute("/modules", ModulesPage);
-const credentialsRoute = lazyRoute("/credentials", CredentialsPage);
-const apiKeysRoute = lazyRoute("/api-keys", ApiKeysPage);
-const oauthAppsRoute = lazyRoute("/oauth-apps", OAuthAppsPage);
 // Dev-only — not in the sidebar; reachable from the MCP Server page link.
 const oauthTesterRoute = lazyRoute("/dev/oauth-tester", OAuthTesterPage);
 
@@ -83,18 +71,6 @@ const ssoCallbackRoute = createRoute({
   component: () => <AuthenticateWithRedirectCallback />,
 });
 
-// OAuth flow tester popup callback — outside the AuthGate so a fresh
-// Clerk login redirect lands here without an mcpist session cookie.
-const oauthTestCallbackRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/oauth-test/callback",
-  component: () => (
-    <Suspense>
-      <OAuthTestCallbackPage />
-    </Suspense>
-  ),
-});
-
 /**
  * OAuth consent gateway — landing page for /api/v1/oauth/authorize when
  * no Clerk session exists. The page wraps itself in AuthGate (Clerk
@@ -112,17 +88,9 @@ const oauthConsentRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-  authLayout.addChildren([
-    mcpServerRoute,
-    modulesRoute,
-    credentialsRoute,
-    apiKeysRoute,
-    oauthAppsRoute,
-    oauthTesterRoute,
-  ]),
+  authLayout.addChildren([mcpServerRoute, oauthTesterRoute]),
   indexRoute,
   ssoCallbackRoute,
-  oauthTestCallbackRoute,
   oauthConsentRoute,
 ]);
 

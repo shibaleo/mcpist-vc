@@ -3,18 +3,13 @@
  *
  * Implements the subset of MCP needed for the existing client integrations:
  *   - initialize / initialized
- *   - tools/list (flattened across all enabled modules for the user)
+ *   - tools/list (flattened across all registered modules — all on)
  *   - tools/call
  *
- * The legacy Go server was stateful (SSE), but every Vercel Function
- * invocation is fresh, so `initialize` is a pure function of the request and
- * we don't track session state. This is intentional — see MIGRATION_PLAN.md
- * §2.1 (Streamable HTTP only).
+ * Single-owner mode: no per-user filtering, no DB. Every Vercel Function
+ * invocation is fresh, so `initialize` is a pure function of the request.
  */
 
-import { eq, and } from "drizzle-orm";
-import { db } from "@/lib/db";
-import { toolSettings } from "@/lib/db/schema";
 import {
   RPC_METHOD_NOT_FOUND,
   RPC_INVALID_PARAMS,
@@ -29,10 +24,6 @@ import { getModule, listModules } from "./modules";
 const PROTOCOL_VERSION = "2025-03-26";
 const SERVER_NAME = "mcpist";
 const SERVER_VERSION = "0.1.0";
-
-interface DispatchCtx {
-  userId: string;
-}
 
 function err(
   id: string | number | null,
@@ -60,33 +51,12 @@ function handleInitialize(id: string | number | null): JsonRpcResponse {
   });
 }
 
-/**
- * Tools/list — every enabled tool from every registered module the user has
- * granted access to. If the user has no `tool_settings` rows yet, every
- * tool from every registered module is exposed (initial-state default).
- */
-async function handleToolsList(
-  ctx: DispatchCtx,
-  id: string | number | null,
-): Promise<JsonRpcResponse> {
-  const settings = await db
-    .select({ toolId: toolSettings.toolId, enabled: toolSettings.enabled })
-    .from(toolSettings)
-    .where(eq(toolSettings.userId, ctx.userId));
-
-  const enabledIds = new Set<string>();
-  let hasAnySetting = false;
-  for (const row of settings) {
-    hasAnySetting = true;
-    if (row.enabled) enabledIds.add(row.toolId);
-  }
-
+function handleToolsList(id: string | number | null): JsonRpcResponse {
   const tools: Array<
     Pick<Tool, "name" | "description" | "inputSchema" | "annotations">
   > = [];
   for (const mod of listModules()) {
     for (const tool of mod.tools) {
-      if (hasAnySetting && !enabledIds.has(tool.id)) continue;
       tools.push({
         // Wire-level `name` must match Claude.ai's regex
         // ^[a-zA-Z0-9_-]{1,64}$ — colons aren't allowed, so we use
@@ -100,7 +70,6 @@ async function handleToolsList(
       });
     }
   }
-
   return ok(id, { tools });
 }
 
@@ -108,13 +77,6 @@ function wireToolName(moduleName: string, toolName: string): string {
   return `${moduleName}_${toolName}`;
 }
 
-/**
- * Wire name → (module, tool) split.
- *
- * Modules can themselves contain underscores ("google_drive"), so we can't
- * just split on the first `_`. Try the registered module names as prefixes
- * — first match wins.
- */
 function resolveWireName(
   wireName: string,
 ): { moduleName: string; toolName: string } | null {
@@ -131,7 +93,6 @@ function resolveWireName(
 }
 
 async function handleToolsCall(
-  ctx: DispatchCtx,
   id: string | number | null,
   params: Record<string, unknown> | undefined,
 ): Promise<JsonRpcResponse> {
@@ -163,24 +124,9 @@ async function handleToolsCall(
     );
   }
 
-  // If the user has explicitly disabled this tool, refuse.
-  const settings = await db
-    .select({ enabled: toolSettings.enabled })
-    .from(toolSettings)
-    .where(
-      and(
-        eq(toolSettings.userId, ctx.userId),
-        eq(toolSettings.toolId, tool.id),
-      ),
-    )
-    .limit(1);
-  if (settings.length > 0 && !settings[0].enabled) {
-    return err(id, RPC_METHOD_NOT_FOUND, `tool disabled: ${tool.id}`);
-  }
-
   let result: ToolCallResult;
   try {
-    const text = await mod.executeTool({ userId: ctx.userId }, toolName, args);
+    const text = await mod.executeTool(toolName, args);
     result = { content: [{ type: "text", text }] };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -191,7 +137,6 @@ async function handleToolsCall(
 
 export async function dispatch(
   req: JsonRpcRequest,
-  ctx: DispatchCtx,
 ): Promise<JsonRpcResponse | null> {
   const id = req.id ?? null;
   const method = req.method;
@@ -207,13 +152,12 @@ export async function dispatch(
       case "ping":
         return ok(id, {});
       case "tools/list":
-        return await handleToolsList(ctx, id);
+        return handleToolsList(id);
       case "tools/call":
-        return await handleToolsCall(ctx, id, req.params);
+        return await handleToolsCall(id, req.params);
       case "resources/list":
         return ok(id, { resources: [] });
       case "prompts/list":
-        // Prompts table dropped; return an empty list for clients that probe.
         return ok(id, { prompts: [] });
       default:
         return isNotification

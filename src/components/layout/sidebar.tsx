@@ -4,12 +4,8 @@ import { useState } from "react";
 import { Link, usePathname } from "@/lib/router";
 import { SITE_NAME } from "@/lib/site";
 import {
-  KeyRound,
-  LayoutGrid,
-  Lock,
   PanelLeftClose,
   PanelLeftOpen,
-  Plug,
   Server,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,15 +22,12 @@ interface NavItem {
 }
 
 /**
- * mcpist nav. MCP Server / Modules / Credentials / API Keys are user-facing;
- * OAuth Apps is an admin-style page for registering provider credentials.
+ * Single-owner nav. The MCP server is configured via env vars, so there's
+ * just one page (status + endpoint verification). Settings, credentials,
+ * API keys, modules, and oauth-apps are all gone in single-owner mode.
  */
 const navItems: NavItem[] = [
-  { href: "/mcp-server", label: "MCP Server", icon: Server, dividerAfter: true },
-  { href: "/modules", label: "Modules", icon: LayoutGrid },
-  { href: "/credentials", label: "Credentials", icon: Lock },
-  { href: "/api-keys", label: "API Keys", icon: KeyRound, dividerAfter: true },
-  { href: "/oauth-apps", label: "OAuth Apps", icon: Plug },
+  { href: "/mcp-server", label: "MCP Server", icon: Server },
 ];
 
 export function SidebarNav({

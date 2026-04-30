@@ -7,8 +7,8 @@
  *
  * Non-rotating: the same refresh token stays valid until its expiry, so
  * Claude.ai can keep refreshing without ever needing user re-consent for
- * 90 days. Single-use rotation would be safer but adds a DB hop on every
- * refresh — tradeoff acceptable for the single-user setup.
+ * 90 days. Single-user setup — no per-token revocation; rotate
+ * SERVER_JWT_SIGNING_KEY's kid to invalidate all.
  */
 
 import * as jose from "jose";
@@ -18,7 +18,6 @@ const TTL_S = 90 * 24 * 60 * 60; // 90 days
 const AUDIENCE = "mcpist-oauth-refresh";
 
 export interface RefreshPayload {
-  userId: string;
   clientId: string;
   scope?: string;
 }
@@ -40,14 +39,10 @@ export async function verifyRefreshToken(token: string): Promise<RefreshPayload>
     audience: AUDIENCE,
     algorithms: ["EdDSA"],
   });
-  if (
-    typeof payload.userId !== "string" ||
-    typeof payload.clientId !== "string"
-  ) {
+  if (typeof payload.clientId !== "string") {
     throw new Error("invalid refresh token payload");
   }
   return {
-    userId: payload.userId,
     clientId: payload.clientId,
     scope: typeof payload.scope === "string" ? payload.scope : undefined,
   };

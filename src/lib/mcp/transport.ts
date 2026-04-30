@@ -3,10 +3,9 @@
  *
  * MCP-over-HTTP receives a single JSON-RPC message per POST and returns the
  * response in the same response body. (Unlike SSE, there's no long-lived
- * connection — Vercel Functions are stateless and that's the whole reason
- * we ditched SSE in MIGRATION_PLAN.md §2.1.)
+ * connection — Vercel Functions are stateless.)
  *
- * MCP also defines a batch form (an array of requests). We accept both.
+ * Single-owner mode: no per-user routing, no ctx beyond what dispatch needs.
  */
 
 import { dispatch } from "./handler";
@@ -17,10 +16,6 @@ import {
   type JsonRpcResponse,
 } from "./types";
 
-interface TransportCtx {
-  userId: string;
-}
-
 function isJsonRpcRequest(v: unknown): v is JsonRpcRequest {
   return (
     typeof v === "object" &&
@@ -30,13 +25,8 @@ function isJsonRpcRequest(v: unknown): v is JsonRpcRequest {
   );
 }
 
-/**
- * Handle one parsed JSON-RPC message (or batch). Returns the response body
- * to send back to the client, or null for notifications-only batches.
- */
 export async function handleMessage(
   body: unknown,
-  ctx: TransportCtx,
 ): Promise<JsonRpcResponse | JsonRpcResponse[] | null> {
   if (Array.isArray(body)) {
     if (body.length === 0) {
@@ -56,7 +46,7 @@ export async function handleMessage(
         });
         continue;
       }
-      const r = await dispatch(msg, ctx);
+      const r = await dispatch(msg);
       if (r) out.push(r);
     }
     return out.length > 0 ? out : null;
@@ -69,7 +59,7 @@ export async function handleMessage(
       error: { code: RPC_INVALID_REQUEST, message: "invalid request" },
     };
   }
-  return await dispatch(body, ctx);
+  return await dispatch(body);
 }
 
 export const RPC_PARSE_ERROR_RESPONSE: JsonRpcResponse = {

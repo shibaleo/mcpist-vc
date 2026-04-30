@@ -87,7 +87,7 @@ export default function McpServerPage() {
    */
   const runVerify = async () => {
     if (!apiKey) {
-      toast.error("API key is required");
+      toast.error("Access token is required");
       return;
     }
     setRunning(true);
@@ -240,7 +240,7 @@ export default function McpServerPage() {
           </div>
           <p className="text-xs text-muted-foreground">
             POST JSON-RPC 2.0 with{" "}
-            <code className="font-mono">Authorization: Bearer mcpist_…</code>.
+            <code className="font-mono">Authorization: Bearer eyJ…</code> (Ed25519 JWT).
             Streamable HTTP only — no SSE.
           </p>
         </CardContent>
@@ -259,10 +259,10 @@ export default function McpServerPage() {
         <CardContent className="space-y-3">
           <div className="flex items-end gap-2">
             <div className="flex-1 space-y-1.5">
-              <Label>API key</Label>
+              <Label>Access token</Label>
               <Input
                 type="password"
-                placeholder="mcpist_…"
+                placeholder="eyJ…"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
                 className="font-mono text-xs"

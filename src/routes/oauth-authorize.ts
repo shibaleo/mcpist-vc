@@ -4,9 +4,8 @@
  * Flow:
  *   1. Validate request parameters (response_type, client_id, redirect_uri,
  *      code_challenge, code_challenge_method).
- *   2. Look for an existing Clerk session via cookie. If absent, redirect
- *      the user to /oauth/consent (the SPA AuthGate handles login, then
- *      sends the browser back here with the cookie set).
+ *   2. Look for an owner Clerk session via cookie. If absent (or not the
+ *      owner), redirect the user to /oauth/consent.
  *   3. Issue a short-lived authorization code (signed JWT) and 302 to the
  *      client's redirect_uri with `?code=...&state=...`.
  *
@@ -15,7 +14,7 @@
  */
 
 import { Hono } from "hono";
-import { authenticate } from "@/lib/auth";
+import { authenticateClerkOwner } from "@/lib/auth";
 import { signCode } from "@/lib/oauth-server/codes";
 
 const app = new Hono().get("/", async (c) => {
@@ -30,7 +29,6 @@ const app = new Hono().get("/", async (c) => {
   const codeChallengeMethod = params.get("code_challenge_method");
   const scope = params.get("scope");
 
-  // Spec violations short-circuit before we touch the session.
   if (responseType !== "code") {
     return c.json(
       { error: "unsupported_response_type", error_description: "only `code` is supported" },
@@ -55,7 +53,6 @@ const app = new Hono().get("/", async (c) => {
       400,
     );
   }
-  // Sanity-check the redirect_uri is parseable.
   try {
     new URL(redirectUri);
   } catch {
@@ -65,17 +62,16 @@ const app = new Hono().get("/", async (c) => {
     );
   }
 
-  const auth = await authenticate(c.req.raw);
+  const auth = await authenticateClerkOwner(c.req.raw);
   if (!auth) {
-    // Ship the whole query forward to the consent page so the round-trip
-    // doesn't lose the PKCE / state context. The SPA's AuthGate then
-    // brings the user back here with a Clerk cookie set.
+    // Ship the whole query forward so the consent round-trip preserves
+    // PKCE / state. The SPA AuthGate handles Clerk login, then bounces
+    // back here with the cookie set.
     const consentTarget = `/oauth/consent${url.search}`;
     return c.redirect(consentTarget);
   }
 
   const code = await signCode({
-    userId: auth.userId,
     clientId,
     redirectUri,
     codeChallenge,
