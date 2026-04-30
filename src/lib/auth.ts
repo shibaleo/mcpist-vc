@@ -1,38 +1,37 @@
 /**
- * Auth for mcpist-vc.
+ * Auth for mcpist-vc — single-owner mode.
  *
- * Two credential types are accepted:
- *   1. Clerk session JWT (browser → Vercel) — verified via Clerk's JWKS,
- *      then mapped to a `mcpist.users` row by `clerk_id`. First-login
- *      auto-provision: if no row exists, we create one (with email +
- *      display name pulled from Clerk).
- *   2. API key JWT (MCP client → Vercel) — `mcpist_<EdDSA-JWT>` prefix.
- *      The JWT's `kid` matches a row in `mcpist.api_keys`, and the
- *      signature is verified against `SERVER_JWT_SIGNING_KEY` (Ed25519 seed).
+ * No DB. The app has exactly one principal: the owner identified by
+ * OWNER_EMAIL (hardcoded below). Two credential types are accepted:
  *
- * Both paths return the same `AuthResult` so route handlers don't need to
- * branch on credential type.
+ *   1. Clerk session JWT (browser → Vercel) — verified via JWKS, then the
+ *      Clerk profile is fetched once and the primary email is matched
+ *      against OWNER_EMAIL. Anyone else: rejected.
+ *   2. Bearer access token (MCP client → Vercel) — Ed25519 JWT minted by
+ *      the OAuth /token endpoint. Audience-bound, expiry-checked. The
+ *      mere fact that a valid signature exists is enough — it could only
+ *      have been issued via /authorize, which itself required an owner
+ *      Clerk session.
  *
- * In-memory caches (per warm Lambda) avoid hitting the DB on every request.
+ * In-memory caches per warm Lambda avoid re-hitting Clerk on every request.
  */
 
 import * as jose from "jose";
-import { eq } from "drizzle-orm";
 import type { KeyObject } from "node:crypto";
-import { db } from "@/lib/db";
-import { users, apiKeys } from "@/lib/db/schema";
 import { loadEd25519Keypair } from "@/lib/ed25519";
+
+export const OWNER_EMAIL = "shiba.dog.leo.private@gmail.com";
+
+const ACCESS_TOKEN_AUDIENCE = "mcpist-oauth-access";
 
 export interface AuthResult {
   authenticated: true;
-  userId: string;
-  email: string | null;
-  displayName: string | null;
-  /** "clerk" for browser-issued, "apiKey" for MCP-client-issued */
-  source: "clerk" | "apiKey";
+  /** "clerk" for browser-issued, "oauth" for MCP-client-issued */
+  source: "clerk" | "oauth";
 }
 
-const API_KEY_PREFIX = "mcpist_";
+const OWNER: AuthResult = { authenticated: true, source: "clerk" };
+const OAUTH_OWNER: AuthResult = { authenticated: true, source: "oauth" };
 
 // ── Clerk JWKS ────────────────────────────────────────────────────────────
 
@@ -58,35 +57,19 @@ function getClerkJWKS() {
   return clerkJWKS;
 }
 
-// ── In-memory caches ──────────────────────────────────────────────────────
+// ── Caches ────────────────────────────────────────────────────────────────
 
-const userByClerkIdCache = new Map<
-  string,
-  { result: AuthResult; expiresAt: number }
->();
-const USER_CACHE_TTL = 5 * 60 * 1000;
-
-const apiKeyCache = new Map<
-  string,
-  { result: AuthResult; expiresAt: number }
->();
-const API_KEY_CACHE_TTL = 5 * 60 * 1000;
+const ownerByClerkIdCache = new Map<string, { allowed: boolean; expiresAt: number }>();
+const OWNER_CACHE_TTL = 5 * 60 * 1000;
 
 // ── Clerk path ────────────────────────────────────────────────────────────
 
 interface ClerkUserResponse {
-  id: string;
-  first_name?: string | null;
-  last_name?: string | null;
-  username?: string | null;
   email_addresses?: Array<{ id: string; email_address: string }>;
   primary_email_address_id?: string | null;
-  image_url?: string | null;
 }
 
-async function fetchClerkUser(
-  clerkUserId: string,
-): Promise<ClerkUserResponse | null> {
+async function fetchOwnerEmail(clerkUserId: string): Promise<string | null> {
   const sk = process.env.CLERK_SECRET_KEY;
   if (!sk) return null;
   try {
@@ -94,87 +77,27 @@ async function fetchClerkUser(
       headers: { Authorization: `Bearer ${sk}` },
     });
     if (!res.ok) return null;
-    return (await res.json()) as ClerkUserResponse;
+    const u = (await res.json()) as ClerkUserResponse;
+    if (!u.email_addresses || u.email_addresses.length === 0) return null;
+    const primary = u.email_addresses.find(
+      (e) => e.id === u.primary_email_address_id,
+    );
+    return primary?.email_address ?? u.email_addresses[0]?.email_address ?? null;
   } catch {
     return null;
   }
 }
 
-function deriveName(u: ClerkUserResponse): string | null {
-  const parts = [u.first_name, u.last_name].filter(
-    (p): p is string => typeof p === "string" && p.length > 0,
-  );
-  if (parts.length > 0) return parts.join(" ");
-  if (u.username) return u.username;
-  return null;
-}
-
-function derivePrimaryEmail(u: ClerkUserResponse): string | null {
-  if (!u.email_addresses || u.email_addresses.length === 0) return null;
-  const primary = u.email_addresses.find(
-    (e) => e.id === u.primary_email_address_id,
-  );
-  return primary?.email_address ?? u.email_addresses[0]?.email_address ?? null;
-}
-
-/**
- * Resolve a Clerk user ID to a mcpist user. Auto-provisions on first login.
- * Returned record uses the mcpist user's UUID, not the Clerk ID.
- */
-async function resolveOrCreateUser(
-  clerkUserId: string,
-): Promise<AuthResult | null> {
-  const cached = userByClerkIdCache.get(clerkUserId);
-  if (cached && cached.expiresAt > Date.now()) return cached.result;
-
-  const existing = await db
-    .select({
-      id: users.id,
-      email: users.email,
-      displayName: users.displayName,
-    })
-    .from(users)
-    .where(eq(users.clerkId, clerkUserId))
-    .limit(1);
-
-  let result: AuthResult;
-  if (existing.length > 0) {
-    const row = existing[0];
-    result = {
-      authenticated: true,
-      userId: row.id,
-      email: row.email ?? null,
-      displayName: row.displayName ?? null,
-      source: "clerk",
-    };
-  } else {
-    // First login — pull profile from Clerk and provision.
-    const clerkUser = await fetchClerkUser(clerkUserId);
-    const email = clerkUser ? derivePrimaryEmail(clerkUser) : null;
-    const displayName = clerkUser ? deriveName(clerkUser) : null;
-
-    const [inserted] = await db
-      .insert(users)
-      .values({
-        clerkId: clerkUserId,
-        email,
-        displayName,
-      })
-      .returning({ id: users.id });
-    result = {
-      authenticated: true,
-      userId: inserted.id,
-      email,
-      displayName,
-      source: "clerk",
-    };
-  }
-
-  userByClerkIdCache.set(clerkUserId, {
-    result,
-    expiresAt: Date.now() + USER_CACHE_TTL,
+async function isClerkUserOwner(clerkUserId: string): Promise<boolean> {
+  const cached = ownerByClerkIdCache.get(clerkUserId);
+  if (cached && cached.expiresAt > Date.now()) return cached.allowed;
+  const email = await fetchOwnerEmail(clerkUserId);
+  const allowed = email?.toLowerCase() === OWNER_EMAIL.toLowerCase();
+  ownerByClerkIdCache.set(clerkUserId, {
+    allowed,
+    expiresAt: Date.now() + OWNER_CACHE_TTL,
   });
-  return result;
+  return allowed;
 }
 
 async function verifyClerkToken(token: string): Promise<AuthResult | null> {
@@ -184,81 +107,40 @@ async function verifyClerkToken(token: string): Promise<AuthResult | null> {
     const { payload } = await jose.jwtVerify(token, jwks);
     const clerkUserId = payload.sub as string;
     if (!clerkUserId) return null;
-    return await resolveOrCreateUser(clerkUserId);
+    if (!(await isClerkUserOwner(clerkUserId))) return null;
+    return OWNER;
   } catch {
     return null;
   }
 }
 
-// ── API key path ──────────────────────────────────────────────────────────
+// ── OAuth access-token path ───────────────────────────────────────────────
 
-let apiKeyVerifierKey: KeyObject | null = null;
+let accessTokenVerifier: KeyObject | null = null;
 
-function getApiKeyVerifier(): KeyObject | null {
-  if (apiKeyVerifierKey) return apiKeyVerifierKey;
+function getAccessTokenVerifier(): KeyObject | null {
+  if (accessTokenVerifier) return accessTokenVerifier;
   try {
-    apiKeyVerifierKey = loadEd25519Keypair().publicKey;
-    return apiKeyVerifierKey;
+    accessTokenVerifier = loadEd25519Keypair().publicKey;
+    return accessTokenVerifier;
   } catch (e) {
-    console.error("[auth] failed to derive API key verifier:", e);
+    console.error("[auth] failed to derive access-token verifier:", e);
     return null;
   }
 }
 
-async function verifyApiKeyJwt(rawToken: string): Promise<AuthResult | null> {
-  const cached = apiKeyCache.get(rawToken);
-  if (cached && cached.expiresAt > Date.now()) return cached.result;
-
-  if (!rawToken.startsWith(API_KEY_PREFIX)) return null;
-  const jwt = rawToken.slice(API_KEY_PREFIX.length);
-
-  const verifier = await getApiKeyVerifier();
+async function verifyAccessToken(rawToken: string): Promise<AuthResult | null> {
+  const verifier = getAccessTokenVerifier();
   if (!verifier) return null;
-
-  let payload: jose.JWTPayload;
-  let header: jose.ProtectedHeaderParameters;
   try {
-    const verified = await jose.jwtVerify(jwt, verifier, {
+    await jose.jwtVerify(rawToken, verifier, {
       algorithms: ["EdDSA"],
+      audience: ACCESS_TOKEN_AUDIENCE,
     });
-    payload = verified.payload;
-    header = verified.protectedHeader;
+    return OAUTH_OWNER;
   } catch {
     return null;
   }
-
-  const kid = header.kid;
-  const sub = payload.sub;
-  if (typeof kid !== "string" || typeof sub !== "string") return null;
-
-  // Confirm the kid still maps to an active API key in the DB.
-  const rows = await db
-    .select({ id: apiKeys.id, userId: apiKeys.userId })
-    .from(apiKeys)
-    .where(eq(apiKeys.jwtKid, kid))
-    .limit(1);
-  if (rows.length === 0) return null;
-  if (rows[0].userId !== sub) return null;
-
-  const userRow = await db
-    .select({ email: users.email, displayName: users.displayName })
-    .from(users)
-    .where(eq(users.id, sub))
-    .limit(1);
-  if (userRow.length === 0) return null;
-
-  const result: AuthResult = {
-    authenticated: true,
-    userId: sub,
-    email: userRow[0].email ?? null,
-    displayName: userRow[0].displayName ?? null,
-    source: "apiKey",
-  };
-  apiKeyCache.set(rawToken, {
-    result,
-    expiresAt: Date.now() + API_KEY_CACHE_TTL,
-  });
-  return result;
 }
 
 // ── Token extraction ──────────────────────────────────────────────────────
@@ -281,18 +163,39 @@ function extractSessionCookie(req: Request): string | null {
 
 export async function authenticate(req: Request): Promise<AuthResult | null> {
   const bearer = extractBearerToken(req);
+  if (bearer) {
+    // Try OAuth access token first (most common on /mcp), then Clerk JWT
+    // (browser via Bearer header — uncommon but allowed).
+    const r = await verifyAccessToken(bearer);
+    if (r) return r;
+    const c = await verifyClerkToken(bearer);
+    if (c) return c;
+  }
   const cookie = extractSessionCookie(req);
-
-  for (const token of [bearer, cookie]) {
-    if (!token) continue;
-    if (token.startsWith(API_KEY_PREFIX)) {
-      const r = await verifyApiKeyJwt(token);
-      if (r) return r;
-      continue;
-    }
-    const r = await verifyClerkToken(token);
+  if (cookie) {
+    const r = await verifyClerkToken(cookie);
     if (r) return r;
   }
+  return null;
+}
 
+/**
+ * Convenience: did this Clerk session belong to the owner? Used by the
+ * /oauth/authorize endpoint to gate consent without going through the
+ * full bearer-or-cookie matrix.
+ */
+export async function authenticateClerkOwner(
+  req: Request,
+): Promise<AuthResult | null> {
+  const cookie = extractSessionCookie(req);
+  if (cookie) {
+    const r = await verifyClerkToken(cookie);
+    if (r) return r;
+  }
+  const bearer = extractBearerToken(req);
+  if (bearer) {
+    const r = await verifyClerkToken(bearer);
+    if (r) return r;
+  }
   return null;
 }

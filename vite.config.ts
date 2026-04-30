@@ -1,5 +1,4 @@
-import "dotenv/config";
-import { defineConfig, type Plugin, type ViteDevServer } from "vite";
+import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
@@ -64,9 +63,18 @@ function honoDevServer(): Plugin {
   };
 }
 
-export default defineConfig({
-  plugins: [react(), honoDevServer()],
-  resolve: {
-    alias: { "@": path.resolve(__dirname, "src") },
-  },
+export default defineConfig(({ mode }) => {
+  // Make .env vars visible to the Hono dev middleware (process.env on the
+  // Node side). Vite only injects VITE_ prefixed vars into the client by
+  // default; the SSR middleware runs in Node and needs the rest too.
+  const env = loadEnv(mode, process.cwd(), "");
+  for (const [k, v] of Object.entries(env)) {
+    if (process.env[k] === undefined) process.env[k] = v;
+  }
+  return {
+    plugins: [react(), honoDevServer()],
+    resolve: {
+      alias: { "@": path.resolve(__dirname, "src") },
+    },
+  };
 });

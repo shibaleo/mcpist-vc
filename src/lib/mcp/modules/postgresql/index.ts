@@ -2,15 +2,16 @@
  * PostgreSQL module — registers tools with the MCP module registry.
  *
  * Tool definitions live in `schemas.json` so they can be exported once and
- * reused by the Console UI without duplicating the descriptions. All
- * user-facing strings are English.
+ * reused by the Console UI without duplicating the descriptions.
+ *
+ * Connection string comes from the MCPIST_DATABASE_URL env var
+ * (single-owner mode).
  */
 
 import {
   type Module,
   type Tool,
   type ToolAnnotations,
-  type ModuleContext,
   ANNOTATE_READ_ONLY,
   ANNOTATE_CREATE,
   ANNOTATE_DESTRUCTIVE,
@@ -27,15 +28,15 @@ const ANNOTATION_MAP: Record<string, ToolAnnotations> = {
 
 const HANDLER_MAP: Record<
   string,
-  (ctx: ModuleContext, params: Record<string, unknown>) => Promise<string>
+  (params: Record<string, unknown>) => Promise<string>
 > = {
-  test_connection: (ctx) => handlers.testConnection(ctx),
-  list_schemas: (ctx, p) => handlers.listSchemas(ctx, p),
-  list_tables: (ctx, p) => handlers.listTables(ctx, p),
-  describe_table: (ctx, p) => handlers.describeTable(ctx, p),
-  query: (ctx, p) => handlers.queryTool(ctx, p),
-  execute: (ctx, p) => handlers.executeTool(ctx, p),
-  execute_ddl: (ctx, p) => handlers.executeDDL(ctx, p),
+  test_connection: () => handlers.testConnection(),
+  list_schemas: (p) => handlers.listSchemas(p),
+  list_tables: (p) => handlers.listTables(p),
+  describe_table: (p) => handlers.describeTable(p),
+  query: (p) => handlers.queryTool(p),
+  execute: (p) => handlers.executeTool(p),
+  execute_ddl: (p) => handlers.executeDDL(p),
 };
 
 interface ToolSchemaEntry {
@@ -60,19 +61,10 @@ const postgresqlModule: Module = {
     "PostgreSQL Database — direct connection for query execution and schema inspection.",
   apiVersion: "v1",
   tools,
-  credentialFields: [
-    {
-      name: "accessToken",
-      label: "Connection string",
-      type: "textarea",
-      placeholder: "postgresql://user:pass@host:5432/db",
-      help: "Standard libpq URL. SSL is appended automatically. localhost / 127.0.0.1 are blocked for SSRF safety.",
-    },
-  ],
-  async executeTool(ctx, toolName, params) {
+  async executeTool(toolName, params) {
     const fn = HANDLER_MAP[toolName];
     if (!fn) throw new Error(`unknown tool: ${toolName}`);
-    return fn(ctx, params);
+    return fn(params);
   },
 };
 

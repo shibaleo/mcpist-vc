@@ -6,7 +6,8 @@
  * match because existing MCP clients are configured against the old wire
  * format.
  *
- * All user-facing strings (tool descriptions, help text) are in English.
+ * Single-owner mode: tool handlers take no per-user context — credentials
+ * come from environment variables.
  */
 
 // ── Tool definition ───────────────────────────────────────────────────────
@@ -85,40 +86,12 @@ export interface ToolCallResult {
 
 // ── Module interface ──────────────────────────────────────────────────────
 
-export interface ModuleContext {
-  userId: string;
-}
-
-/**
- * Per-field schema for the manual credential-entry form. Keys (`name`)
- * map directly into the `Credentials` envelope the broker stores —
- * `apiKey`, `accessToken`, `token`, etc. — so values land in the same
- * places module handlers already read from.
- *
- * Declare this on a module if it needs structured manual entry; modules
- * that ship only via OAuth (or that need just a single freeform string)
- * can omit it and the UI falls back to a textarea.
- */
-export interface CredentialField {
-  name: string;
-  label: string;
-  type: "text" | "password" | "textarea";
-  placeholder?: string;
-  /** Help text shown beneath the input. */
-  help?: string;
-  /** Optional link (e.g., the provider's "where do I get this" docs). */
-  helpUrl?: string;
-}
-
 export interface Module {
   name: string;
   description: string;
   apiVersion: string;
   tools: Tool[];
-  /** Per-module manual-entry credential schema. Optional. */
-  credentialFields?: CredentialField[];
   executeTool(
-    ctx: ModuleContext,
     toolName: string,
     params: Record<string, unknown>,
   ): Promise<string>;

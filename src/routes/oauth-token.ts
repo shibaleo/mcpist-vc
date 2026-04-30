@@ -9,16 +9,12 @@
  *   grant_type=refresh_token
  *     refresh_token, client_id
  *
- * Both branches issue an mcpist API key (Ed25519 JWT) wrapped as an OAuth
- * Bearer access token, plus a fresh 90-day refresh token. The access
- * token row is persisted to `mcpist.api_keys` so the user can see and
- * revoke it from the API Keys page.
+ * Both branches issue a 24h Ed25519 access-token JWT plus a fresh 90-day
+ * refresh-token JWT. Stateless — no DB row, no per-token revocation.
  */
 
 import { Hono } from "hono";
-import { db } from "@/lib/db";
-import { apiKeys } from "@/lib/db/schema";
-import { issueApiKey } from "@/lib/api-key";
+import { issueAccessToken, ACCESS_TOKEN_TTL_S } from "@/lib/oauth-server/access-tokens";
 import { consumeCode } from "@/lib/oauth-server/codes";
 import {
   signRefreshToken,
@@ -38,8 +34,6 @@ async function sha256Base64Url(input: string): Promise<string> {
     .replace(/=+$/, "");
 }
 
-const TOKEN_TTL_S = 24 * 60 * 60; // 24 hours
-
 interface IssueResult {
   access_token: string;
   token_type: "Bearer";
@@ -49,32 +43,16 @@ interface IssueResult {
   scope: string;
 }
 
-/**
- * Mint an access token + refresh token for `userId`, persist the access
- * token to api_keys, and return the OAuth-shaped response body.
- */
 async function issueTokens(
-  userId: string,
   clientId: string,
   scope: string | undefined,
 ): Promise<IssueResult> {
-  const accessExpiresAt = Math.floor(Date.now() / 1000) + TOKEN_TTL_S;
-  const issued = await issueApiKey(userId, accessExpiresAt);
-
-  await db.insert(apiKeys).values({
-    userId,
-    jwtKid: issued.kid,
-    keyPrefix: issued.keyPrefix,
-    name: `OAuth: ${clientId.slice(0, 24)}`,
-    expiresAt: new Date(accessExpiresAt * 1000),
-  });
-
-  const refresh = await signRefreshToken({ userId, clientId, scope });
-
+  const access = await issueAccessToken(clientId, scope);
+  const refresh = await signRefreshToken({ clientId, scope });
   return {
-    access_token: issued.token,
+    access_token: access.token,
     token_type: "Bearer",
-    expires_in: TOKEN_TTL_S,
+    expires_in: ACCESS_TOKEN_TTL_S,
     refresh_token: refresh,
     refresh_token_expires_in: REFRESH_TTL_S,
     scope: scope ?? "",
@@ -139,7 +117,7 @@ const app = new Hono().post("/", async (c) => {
       );
     }
 
-    const tokens = await issueTokens(payload.userId, clientId, payload.scope);
+    const tokens = await issueTokens(clientId, payload.scope);
     return c.json(tokens);
   }
 
@@ -174,7 +152,7 @@ const app = new Hono().post("/", async (c) => {
         400,
       );
     }
-    const tokens = await issueTokens(payload.userId, clientId, payload.scope);
+    const tokens = await issueTokens(clientId, payload.scope);
     return c.json(tokens);
   }
 

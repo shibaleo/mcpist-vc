@@ -15,8 +15,6 @@
  */
 
 import postgres, { type PostgresType, type Sql } from "postgres";
-import { getModuleCredentials } from "@/lib/credentials/broker";
-import type { ModuleContext } from "@/lib/mcp/types";
 
 const CONNECT_TIMEOUT_S = 10;
 const QUERY_TIMEOUT_S = 30;
@@ -85,12 +83,14 @@ interface ParsedConn {
   url: URL;
 }
 
-async function getConnectionInfo(ctx: ModuleContext): Promise<ParsedConn> {
-  const creds = await getModuleCredentials(ctx.userId, "postgresql");
-  if (!creds || !creds.accessToken) {
-    throw new Error("PostgreSQL connection string not configured");
+function getConnectionInfo(): ParsedConn {
+  const connStr = process.env.MCPIST_DATABASE_URL;
+  if (!connStr) {
+    throw new Error(
+      "MCPIST_DATABASE_URL is not set — configure the postgres connection string in env",
+    );
   }
-  return parseAndValidate(creds.accessToken);
+  return parseAndValidate(connStr);
 }
 
 function parseAndValidate(connStr: string): ParsedConn {
@@ -168,10 +168,9 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 async function withConnection<T>(
-  ctx: ModuleContext,
   fn: (sql: Sql, info: ParsedConn) => Promise<T>,
 ): Promise<T> {
-  const info = await getConnectionInfo(ctx);
+  const info = getConnectionInfo();
   const sql = open(info.raw);
   try {
     return await fn(sql, info);
@@ -186,8 +185,8 @@ async function withConnection<T>(
 
 // ── Tool implementations ──────────────────────────────────────────────────
 
-export async function testConnection(ctx: ModuleContext): Promise<string> {
-  return withConnection(ctx, async (sql, info) => {
+export async function testConnection(): Promise<string> {
+  return withConnection(async (sql, info) => {
     const rows = await withTimeout(
       sql<{ version: string }[]>`SELECT version() AS version`,
       QUERY_TIMEOUT_S * 1000,
@@ -210,11 +209,10 @@ export async function testConnection(ctx: ModuleContext): Promise<string> {
 }
 
 export async function listSchemas(
-  ctx: ModuleContext,
   params: Record<string, unknown>,
 ): Promise<string> {
   const includeSystem = params.include_system === true;
-  return withConnection(ctx, async (sql) => {
+  return withConnection(async (sql) => {
     const rows = includeSystem
       ? await withTimeout(
           sql<{ schema_name: string }[]>`
@@ -240,7 +238,6 @@ export async function listSchemas(
 }
 
 export async function listTables(
-  ctx: ModuleContext,
   params: Record<string, unknown>,
 ): Promise<string> {
   const schema =
@@ -252,7 +249,7 @@ export async function listTables(
     ? ["BASE TABLE", "VIEW"]
     : ["BASE TABLE"];
 
-  return withConnection(ctx, async (sql) => {
+  return withConnection(async (sql) => {
     const rows = await withTimeout(
       sql<{ table_name: string; table_type: string; row_estimate: string }[]>`
         SELECT
@@ -280,7 +277,6 @@ export async function listTables(
 }
 
 export async function describeTable(
-  ctx: ModuleContext,
   params: Record<string, unknown>,
 ): Promise<string> {
   const table = params.table;
@@ -292,7 +288,7 @@ export async function describeTable(
       ? params.schema
       : "public";
 
-  return withConnection(ctx, async (sql) => {
+  return withConnection(async (sql) => {
     const columns = await withTimeout(
       sql<
         {
@@ -372,7 +368,6 @@ export async function describeTable(
 }
 
 export async function queryTool(
-  ctx: ModuleContext,
   params: Record<string, unknown>,
 ): Promise<string> {
   const sqlText = params.sql;
@@ -399,7 +394,7 @@ export async function queryTool(
     if (maxRows < 1) maxRows = 1;
   }
 
-  return withConnection(ctx, async (sql) => {
+  return withConnection(async (sql) => {
     // postgres-js: tagged-template is for static SQL. For arbitrary SQL with
     // $1/$2 placeholders we use sql.unsafe(query, params), which is the
     // intended escape hatch for user-supplied SELECT.
@@ -439,7 +434,6 @@ export async function queryTool(
 }
 
 export async function executeTool(
-  ctx: ModuleContext,
   params: Record<string, unknown>,
 ): Promise<string> {
   const sqlText = params.sql;
@@ -459,7 +453,7 @@ export async function executeTool(
     ? (params.params as unknown[])
     : [];
 
-  return withConnection(ctx, async (sql) => {
+  return withConnection(async (sql) => {
     const result = await withTimeout(
       sql.unsafe(sqlText, queryParams as never[]),
       QUERY_TIMEOUT_S * 1000,
@@ -475,7 +469,6 @@ export async function executeTool(
 }
 
 export async function executeDDL(
-  ctx: ModuleContext,
   params: Record<string, unknown>,
 ): Promise<string> {
   const sqlText = params.sql;
@@ -487,7 +480,7 @@ export async function executeDDL(
       "only DDL statements (CREATE/ALTER/DROP/TRUNCATE) are allowed. Use 'query' for SELECT or 'execute' for INSERT/UPDATE/DELETE",
     );
   }
-  return withConnection(ctx, async (sql) => {
+  return withConnection(async (sql) => {
     const result = await withTimeout(
       sql.unsafe(sqlText),
       QUERY_TIMEOUT_S * 1000,

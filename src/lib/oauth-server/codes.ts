@@ -1,16 +1,19 @@
 /**
  * Authorization-code JWTs.
  *
- * Stateless OAuth — codes are signed JWTs that carry the (userId,
- * client_id, redirect_uri, code_challenge, scope) tuple from the authorize
- * request. The token endpoint verifies the signature, expiry, and PKCE
- * binding, then issues an access token. No DB row needed.
+ * Stateless OAuth — codes are signed JWTs that carry the (client_id,
+ * redirect_uri, code_challenge, scope) tuple from the authorize request.
+ * The token endpoint verifies the signature, expiry, and PKCE binding,
+ * then issues an access token. No DB row needed.
  *
- * Single-use enforcement: the JWT's `jti` claim is checked against an
- * in-memory used-codes set. The set lives only as long as the warm Lambda
- * does — replay attacks within the same warm container are blocked, but
- * a code might be replayable across a cold-start. The 5-minute TTL keeps
- * that window short.
+ * No userId — single-owner mode. The fact that a code was minted at all
+ * means the owner already passed Clerk consent at /authorize.
+ *
+ * Single-use enforcement: the JWT's `jti` is checked against an in-memory
+ * used-codes set. The set lives only as long as the warm Lambda does —
+ * replay attacks within the same warm container are blocked, but a code
+ * might be replayable across a cold-start. The 5-minute TTL keeps the
+ * window short.
  */
 
 import * as jose from "jose";
@@ -20,7 +23,6 @@ const CODE_TTL_S = 300; // 5 minutes
 const AUDIENCE = "mcpist-oauth-code";
 
 export interface CodePayload {
-  userId: string;
   clientId: string;
   redirectUri: string;
   /** Base64url-encoded SHA-256 of the verifier (S256). */
@@ -54,7 +56,6 @@ export async function consumeCode(token: string): Promise<CodePayload> {
     usedJtis.add(payload.jti);
   }
   if (
-    typeof payload.userId !== "string" ||
     typeof payload.clientId !== "string" ||
     typeof payload.redirectUri !== "string" ||
     typeof payload.codeChallenge !== "string"
@@ -62,7 +63,6 @@ export async function consumeCode(token: string): Promise<CodePayload> {
     throw new Error("invalid code payload");
   }
   return {
-    userId: payload.userId,
     clientId: payload.clientId,
     redirectUri: payload.redirectUri,
     codeChallenge: payload.codeChallenge,
