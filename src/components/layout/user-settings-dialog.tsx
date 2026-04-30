@@ -1,11 +1,8 @@
 "use client";
 
 /**
- * Personal account settings dialog.
- *
- * mcpist parts: profile (read-only — display name comes from Clerk).
- * Plan / billing lives on its own page (`/settings`) because Stripe portal
- * redirect deserves more real estate than a dialog.
+ * Personal account settings dialog. Profile is read-only — display name
+ * and email come from Clerk; edit there to change them.
  */
 
 import { useMe } from "@/components/auth/auth-gate";
